@@ -1,14 +1,7 @@
 import type { NextConfig } from "next";
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-})
 
 const nextConfig: NextConfig = {
-  webpack: (config) => {
-    return config;
-  },
+  /* config options here */
 };
 
-export default withPWA(nextConfig);
+export default nextConfig;
