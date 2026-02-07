@@ -441,26 +441,41 @@ export default function PickBundle() {
                     padding: spacing.md,
                     textAlign: 'center',
                   }}>
-                    <button
-                      onClick={() => handleScan(item)}
-                      disabled={isPicked || actionLoadingId === item.book_title_id}
-                      style={{
+                    {isPicked ? (
+                      <span style={{
                         display: 'inline-block',
                         padding: `${spacing.xs} ${spacing.md}`,
-                        backgroundColor: isPicked ? colors.success : colors.surface,
-                        color: isPicked ? colors.deepCocoa : colors.textLight,
+                        backgroundColor: colors.success,
+                        color: colors.deepCocoa,
                         fontSize: typography.fontSize.sm,
                         fontWeight: typography.fontWeight.bold,
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
-                        border: `2px solid ${isPicked ? colors.success : colors.border}`,
                         borderRadius: radii.sm,
-                        cursor: isPicked ? 'default' : 'pointer',
+                      }}>
+                        ✓ Picked
+                      </span>
+                    ) : (
+                      <span style={{
+                        display: 'inline-block',
+                        padding: `${spacing.xs} ${spacing.md}`,
+                        backgroundColor:
+                          actionLoadingId === item.book_title_id ? colors.primary : colors.surface,
+                        color:
+                          actionLoadingId === item.book_title_id ? colors.cream : colors.textLight,
+                        fontSize: typography.fontSize.sm,
+                        fontWeight: typography.fontWeight.bold,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        border: `2px solid ${
+                          actionLoadingId === item.book_title_id ? colors.primary : colors.border
+                        }`,
+                        borderRadius: radii.sm,
                         minWidth: '110px',
-                      }}
-                    >
-                      {isPicked ? '✓ Picked' : actionLoadingId === item.book_title_id ? 'Scanning…' : 'Scan'}
-                    </button>
+                      }}>
+                        {actionLoadingId === item.book_title_id ? 'Scanning…' : 'Pending'}
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
