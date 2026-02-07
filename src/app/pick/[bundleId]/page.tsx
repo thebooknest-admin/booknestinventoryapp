@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 
@@ -53,41 +53,43 @@ export default function PickBundle() {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [completeLoading, setCompleteLoading] = useState(false);
   const [scanInput, setScanInput] = useState('');
 
-  useEffect(() => {
-    const loadPickList = async () => {
-      if (!bundleId) {
-        setLoading(false);
-        return;
+  const loadPickList = useCallback(async () => {
+    if (!bundleId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      setSuccessMessage(null);
+      const response = await fetch(`/api/shipments/${bundleId}/pick-list`, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load pick list');
       }
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await fetch(`/api/shipments/${bundleId}/pick-list`, {
-          cache: 'no-store',
-        });
 
-        if (!response.ok) {
-          throw new Error('Failed to load pick list');
-        }
-
-        const data = (await response.json()) as PickListItem[];
-        const sorted = data
-          .map(mapPickListRow)
-          .sort((a, b) => (a.bin_label || '').localeCompare(b.bin_label || ''));
-        setItems(sorted);
-      } catch (err) {
-        console.error('Error loading pick list:', err);
-        setError('Unable to load pick list. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPickList();
+      const data = (await response.json()) as PickListItem[];
+      const sorted = data
+        .map(mapPickListRow)
+        .sort((a, b) => (a.bin_label || '').localeCompare(b.bin_label || ''));
+      setItems(sorted);
+    } catch (err) {
+      console.error('Error loading pick list:', err);
+      setError('Unable to load pick list. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [bundleId]);
+
+  useEffect(() => {
+    loadPickList();
+  }, [loadPickList]);
 
   const pickedCount = useMemo(() => items.filter((item) => item.isPicked).length, [items]);
   const totalCount = items.length;
@@ -129,6 +131,7 @@ export default function PickBundle() {
     const trimmed = scanInput.trim();
     if (!trimmed) return;
     setError(null);
+    setSuccessMessage(null);
     const match = items.find((item) => item.book_title_id === trimmed);
     if (!match) {
       setError('Scanned ID does not match any book in this pick list.');
@@ -142,6 +145,7 @@ export default function PickBundle() {
     try {
       setCompleteLoading(true);
       setError(null);
+      setSuccessMessage(null);
       if (!bundleId) {
         throw new Error('Missing shipment ID.');
       }
@@ -154,12 +158,43 @@ export default function PickBundle() {
         throw new Error(body?.error || 'Failed to complete shipment');
       }
 
-      router.push('/work/picking');
+      setSuccessMessage('All books picked! Moving this shipment to shipping.');
+      window.setTimeout(() => {
+        router.push('/work/picking');
+      }, 1500);
     } catch (err) {
       console.error('Error completing shipment:', err);
       setError('Unable to complete picking. Please confirm all books are scanned.');
     } finally {
       setCompleteLoading(false);
+    }
+  };
+
+  const handleClearScans = async () => {
+    if (!bundleId) {
+      setError('Missing shipment ID.');
+      return;
+    }
+    const confirmed = window.confirm('Clear all scans and start this pick list over?');
+    if (!confirmed) return;
+    try {
+      setLoading(true);
+      setError(null);
+      setSuccessMessage(null);
+      const response = await fetch(`/api/shipments/${bundleId}/clear`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body?.error || 'Failed to clear scans');
+      }
+      setScanInput('');
+      await loadPickList();
+    } catch (err) {
+      console.error('Error clearing scans:', err);
+      setError('Unable to clear scans. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -277,6 +312,24 @@ export default function PickBundle() {
         >
           Scan
         </button>
+        <button
+          onClick={handleClearScans}
+          disabled={loading || items.length === 0}
+          style={{
+            padding: `${spacing.sm} ${spacing.lg}`,
+            backgroundColor: colors.surface,
+            color: colors.primary,
+            border: `2px solid ${colors.primary}`,
+            fontSize: typography.fontSize.base,
+            fontWeight: typography.fontWeight.bold,
+            textTransform: 'uppercase',
+            borderRadius: radii.sm,
+            cursor: loading || items.length === 0 ? 'not-allowed' : 'pointer',
+            height: 'fit-content',
+          }}
+        >
+          Clear Scans
+        </button>
         <div style={{
           flex: '1 1 220px',
           color: colors.textLight,
@@ -299,6 +352,20 @@ export default function PickBundle() {
           fontWeight: typography.fontWeight.semibold,
         }}>
           {error}
+        </div>
+      )}
+      {successMessage && (
+        <div style={{
+          marginBottom: spacing.lg,
+          padding: spacing.md,
+          borderRadius: radii.md,
+          backgroundColor: colors.sageMist,
+          border: `2px solid ${colors.success}`,
+          color: colors.deepCocoa,
+          fontSize: typography.fontSize.base,
+          fontWeight: typography.fontWeight.semibold,
+        }}>
+          {successMessage}
         </div>
       )}
 
