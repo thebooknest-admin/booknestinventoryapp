@@ -10,7 +10,7 @@ interface InventoryItem {
   title: string;
   author: string;
   ageGroup: string;
-  bin: string;
+  bin: string;  // This will now contain bin_id (BN-FLED-ANM-01)
   status: string;
   receivedAt: string;
   coverUrl: string | null;
@@ -38,7 +38,7 @@ interface BookCopyRecord {
   sku: string;
   isbn: string;
   age_group: string;
-  bin: string;
+  bin_id: string;  // Changed from bin to bin_id
   status: string;
   received_at: string;
   book_titles: BookTitleRecord[] | BookTitleRecord | null;
@@ -55,7 +55,7 @@ export async function getInventory(): Promise<GetInventoryResult> {
     sku,
     isbn,
     age_group,
-    bin,
+    bin_id,
     status,
     received_at,
     book_titles (
@@ -92,7 +92,7 @@ export async function getInventory(): Promise<GetInventoryResult> {
           title: bookTitleData.title,
           author: bookTitleData.author,
           ageGroup: record.age_group,
-          bin: record.bin,
+          bin: record.bin_id || 'N/A',  // Changed from bin to bin_id
           status: record.status,
           receivedAt: record.received_at,
           coverUrl: bookTitleData.cover_url || null,
@@ -119,7 +119,7 @@ export async function updateBookCopy(
     ageGroup?: string;
     bin?: string;
     status?: string;
-    coverUrl?: string; // ADD THIS
+    coverUrl?: string;
   }
 ): Promise<UpdateBookCopyResult> {
   try {
@@ -135,7 +135,7 @@ export async function updateBookCopy(
       bookCopyUpdates.age_group = updates.ageGroup.trim();
     }
     if (updates.bin !== undefined) {
-      bookCopyUpdates.bin = updates.bin.trim();
+      bookCopyUpdates.bin_id = updates.bin.trim();  // Changed from bin to bin_id
     }
     if (updates.status !== undefined) {
       bookCopyUpdates.status = updates.status.trim();
@@ -177,7 +177,7 @@ export async function updateBookCopy(
         bookTitleUpdates.author = updates.author.trim();
       }
       if (updates.coverUrl !== undefined) {
-        bookTitleUpdates.cover_url = updates.coverUrl.trim() || null; // ADD THIS
+        bookTitleUpdates.cover_url = updates.coverUrl.trim() || null;
       }
 
       // Update book_titles
