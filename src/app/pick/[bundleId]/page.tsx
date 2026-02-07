@@ -13,6 +13,7 @@ type PickListItem = {
   book_to_find: string | null;
   status: string | null;
   scanned_at: string | null;
+  book_copy_sku: string | null;  // Added this field
 };
 
 type PickListRow = PickListItem & {
@@ -40,7 +41,7 @@ const mapPickListRow = (item: PickListItem): PickListRow => {
     ...item,
     title,
     author,
-    sku: item.book_title_id,
+    sku: item.book_copy_sku || item.book_title_id,  // Use actual SKU, fallback to UUID
     isPicked: item.status?.includes('PICKED') || Boolean(item.scanned_at),
   };
 };
