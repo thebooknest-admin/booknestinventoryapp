@@ -1,40 +1,167 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 
-export default function PickBundle({ params }: { params: { bundleId: string } }) {
-  // Mock data - replace with Supabase query
-  const bundle = {
-    id: params.bundleId,
-    name: `ORDER-${params.bundleId}`,
-    items: [
-      { id: '1', sku: 'BK-12345', title: 'The Great Gatsby', location: 'A-12-3', picked: false },
-      { id: '2', sku: 'BK-12346', title: '1984', location: 'B-05-2', picked: false },
-      { id: '3', sku: 'BK-12347', title: 'To Kill a Mockingbird', location: 'A-15-1', picked: false },
-      { id: '4', sku: 'BK-12348', title: 'Pride and Prejudice', location: 'C-08-4', picked: false },
-      { id: '5', sku: 'BK-12349', title: 'The Catcher in the Rye', location: 'A-20-2', picked: false },
-    ],
+type PickListItem = {
+  book_title_id: string;
+  bin_label: string | null;
+  bin_id: string | null;
+  instruction: string | null;
+  book_to_find: string | null;
+  status: string | null;
+  scanned_at: string | null;
+};
+
+type PickListRow = PickListItem & {
+  title: string;
+  author: string;
+  isPicked: boolean;
+};
+
+const parseBookToFind = (bookToFind: string | null) => {
+  if (!bookToFind) {
+    return { title: 'Unknown title', author: '' };
+  }
+  const cleaned = bookToFind.replace('📖 Find: "', '').replace('"', '');
+  const [title, author] = cleaned.split('" by ');
+  return {
+    title: title?.trim() || 'Unknown title',
+    author: author?.trim() || '',
   };
+};
 
-  const [pickedItems, setPickedItems] = useState<Set<string>>(new Set());
+const mapPickListRow = (item: PickListItem): PickListRow => {
+  const { title, author } = parseBookToFind(item.book_to_find);
+  return {
+    ...item,
+    title,
+    author,
+    isPicked: item.status?.includes('PICKED') || Boolean(item.scanned_at),
+  };
+};
 
-  const togglePicked = (itemId: string) => {
-    setPickedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(itemId)) {
-        next.delete(itemId);
-      } else {
-        next.add(itemId);
+export default function PickBundle() {
+  const params = useParams<{ bundleId: string }>();
+  const bundleId = Array.isArray(params.bundleId)
+    ? params.bundleId[0]
+    : params.bundleId;
+  const router = useRouter();
+  const [items, setItems] = useState<PickListRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [completeLoading, setCompleteLoading] = useState(false);
+  const [scanInput, setScanInput] = useState('');
+
+  useEffect(() => {
+    const loadPickList = async () => {
+      if (!bundleId) {
+        setLoading(false);
+        return;
       }
-      return next;
-    });
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await fetch(`/api/shipments/${bundleId}/pick-list`, {
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load pick list');
+        }
+
+        const data = (await response.json()) as PickListItem[];
+        const sorted = data
+          .map(mapPickListRow)
+          .sort((a, b) => (a.bin_label || '').localeCompare(b.bin_label || ''));
+        setItems(sorted);
+      } catch (err) {
+        console.error('Error loading pick list:', err);
+        setError('Unable to load pick list. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPickList();
+  }, [bundleId]);
+
+  const pickedCount = useMemo(() => items.filter((item) => item.isPicked).length, [items]);
+  const totalCount = items.length;
+  const allPicked = totalCount > 0 && pickedCount === totalCount;
+
+  const handleScan = async (item: PickListRow) => {
+    if (item.isPicked) return;
+    try {
+      setActionLoadingId(item.book_title_id);
+      if (!bundleId) {
+        throw new Error('Missing shipment ID.');
+      }
+      const response = await fetch(`/api/shipments/${bundleId}/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ book_title_id: item.book_title_id }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to mark as picked');
+      }
+
+      setItems((prev) =>
+        prev.map((row) =>
+          row.book_title_id === item.book_title_id
+            ? { ...row, isPicked: true, status: '✅ PICKED', scanned_at: new Date().toISOString() }
+            : row
+        )
+      );
+    } catch (err) {
+      console.error('Error scanning book:', err);
+      setError('Unable to mark book as picked. Please try again.');
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
-  const pickedCount = pickedItems.size;
-  const totalCount = bundle.items.length;
-  const allPicked = pickedCount === totalCount;
+  const handleScanSubmit = async () => {
+    const trimmed = scanInput.trim();
+    if (!trimmed) return;
+    setError(null);
+    const match = items.find((item) => item.book_title_id === trimmed);
+    if (!match) {
+      setError('Scanned ID does not match any book in this pick list.');
+      return;
+    }
+    await handleScan(match);
+    setScanInput('');
+  };
+
+  const handleComplete = async () => {
+    try {
+      setCompleteLoading(true);
+      setError(null);
+      if (!bundleId) {
+        throw new Error('Missing shipment ID.');
+      }
+      const response = await fetch(`/api/shipments/${bundleId}/complete`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body?.error || 'Failed to complete shipment');
+      }
+
+      router.push('/work/picking');
+    } catch (err) {
+      console.error('Error completing shipment:', err);
+      setError('Unable to complete picking. Please confirm all books are scanned.');
+    } finally {
+      setCompleteLoading(false);
+    }
+  };
 
   return (
     <div style={{
@@ -73,7 +200,7 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
             color: colors.primary,
             margin: 0,
           }}>
-            {bundle.name}
+            PICK LIST #{bundleId ?? '—'}
           </h1>
           <div style={{
             fontSize: typography.fontSize['2xl'],
@@ -85,7 +212,96 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
         </div>
       </header>
 
+      {/* Scan Input */}
+      <div style={{
+        marginBottom: spacing.lg,
+        padding: spacing.md,
+        borderRadius: radii.md,
+        backgroundColor: colors.surface,
+        border: `2px solid ${colors.border}`,
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: spacing.md,
+      }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <div style={{
+            fontSize: typography.fontSize.sm,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.textLight,
+            marginBottom: spacing.xs,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}>
+            Scan book barcode
+          </div>
+          <input
+            value={scanInput}
+            onChange={(event) => {
+              setScanInput(event.target.value);
+              if (error) {
+                setError(null);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                handleScanSubmit();
+              }
+            }}
+            placeholder="Scan book_title_id"
+            style={{
+              width: '100%',
+              padding: `${spacing.sm} ${spacing.md}`,
+              borderRadius: radii.sm,
+              border: `2px solid ${colors.border}`,
+              fontSize: typography.fontSize.base,
+            }}
+          />
+        </div>
+        <button
+          onClick={handleScanSubmit}
+          disabled={!scanInput.trim()}
+          style={{
+            padding: `${spacing.sm} ${spacing.lg}`,
+            backgroundColor: scanInput.trim() ? colors.primary : colors.border,
+            color: scanInput.trim() ? colors.cream : colors.textLight,
+            border: `2px solid ${scanInput.trim() ? colors.primary : colors.border}`,
+            fontSize: typography.fontSize.base,
+            fontWeight: typography.fontWeight.bold,
+            textTransform: 'uppercase',
+            borderRadius: radii.sm,
+            cursor: scanInput.trim() ? 'pointer' : 'not-allowed',
+            height: 'fit-content',
+          }}
+        >
+          Scan
+        </button>
+        <div style={{
+          flex: '1 1 220px',
+          color: colors.textLight,
+          fontSize: typography.fontSize.sm,
+        }}>
+          Tip: scan the barcode or paste the book title ID to mark it picked.
+        </div>
+      </div>
+
       {/* Pick List Table */}
+      {error && (
+        <div style={{
+          marginBottom: spacing.lg,
+          padding: spacing.md,
+          borderRadius: radii.md,
+          backgroundColor: colors.cream,
+          border: `2px solid ${colors.primary}`,
+          color: colors.primary,
+          fontSize: typography.fontSize.base,
+          fontWeight: typography.fontWeight.semibold,
+        }}>
+          {error}
+        </div>
+      )}
+
       <div style={{
         backgroundColor: colors.surface,
         border: `2px solid ${colors.border}`,
@@ -111,7 +327,7 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
                 letterSpacing: '0.05em',
                 width: '15%',
               }}>
-                SKU
+                Bin
               </th>
               <th style={{
                 padding: spacing.md,
@@ -132,7 +348,7 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
                 letterSpacing: '0.05em',
                 width: '15%',
               }}>
-                Location
+                Instruction
               </th>
               <th style={{
                 padding: spacing.md,
@@ -148,12 +364,41 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
             </tr>
           </thead>
           <tbody>
-            {bundle.items.map((item, index) => {
-              const isPicked = pickedItems.has(item.id);
+            {loading && (
+              <tr>
+                <td
+                  colSpan={4}
+                  style={{
+                    padding: spacing.lg,
+                    textAlign: 'center',
+                    fontSize: typography.fontSize.base,
+                    color: colors.textLight,
+                  }}
+                >
+                  Loading pick list…
+                </td>
+              </tr>
+            )}
+            {!loading && items.length === 0 && (
+              <tr>
+                <td
+                  colSpan={4}
+                  style={{
+                    padding: spacing.lg,
+                    textAlign: 'center',
+                    fontSize: typography.fontSize.base,
+                    color: colors.textLight,
+                  }}
+                >
+                  No books assigned yet.
+                </td>
+              </tr>
+            )}
+            {!loading && items.map((item, index) => {
+              const isPicked = item.isPicked;
               return (
                 <tr
-                  key={item.id}
-                  onClick={() => togglePicked(item.id)}
+                  key={item.book_title_id}
                   style={{
                     borderBottom: `2px solid ${colors.border}`,
                     backgroundColor: isPicked
@@ -161,69 +406,61 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
                       : index % 2 === 0
                       ? colors.surface
                       : colors.cream,
-                    cursor: 'pointer',
                     opacity: isPicked ? 0.7 : 1,
                   }}
                 >
                   <td style={{
                     padding: spacing.md,
-                    fontSize: typography.fontSize.lg,
+                    fontSize: typography.fontSize.xl,
                     fontWeight: typography.fontWeight.bold,
                     color: colors.text,
                     fontFamily: 'monospace',
                   }}>
-                    {item.sku}
+                    {item.bin_label || '—'}
                   </td>
                   <td style={{
                     padding: spacing.md,
                     fontSize: typography.fontSize.base,
                     color: colors.text,
                   }}>
-                    {item.title}
+                    <div style={{ fontWeight: typography.fontWeight.bold }}>{item.title}</div>
+                    {item.author && (
+                      <div style={{ color: colors.textLight, fontSize: typography.fontSize.sm }}>
+                        by {item.author}
+                      </div>
+                    )}
                   </td>
                   <td style={{
                     padding: spacing.md,
-                    fontSize: typography.fontSize.xl,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.primary,
-                    fontFamily: 'monospace',
+                    fontSize: typography.fontSize.base,
+                    color: colors.text,
                   }}>
-                    {item.location}
+                    {item.instruction || 'Grab from bin'}
                   </td>
                   <td style={{
                     padding: spacing.md,
                     textAlign: 'center',
                   }}>
-                    {isPicked ? (
-                      <span style={{
+                    <button
+                      onClick={() => handleScan(item)}
+                      disabled={isPicked || actionLoadingId === item.book_title_id}
+                      style={{
                         display: 'inline-block',
                         padding: `${spacing.xs} ${spacing.md}`,
-                        backgroundColor: colors.success,
-                        color: colors.deepCocoa,
+                        backgroundColor: isPicked ? colors.success : colors.surface,
+                        color: isPicked ? colors.deepCocoa : colors.textLight,
                         fontSize: typography.fontSize.sm,
                         fontWeight: typography.fontWeight.bold,
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
+                        border: `2px solid ${isPicked ? colors.success : colors.border}`,
                         borderRadius: radii.sm,
-                      }}>
-                        ✓ PICKED
-                      </span>
-                    ) : (
-                      <span style={{
-                        display: 'inline-block',
-                        padding: `${spacing.xs} ${spacing.md}`,
-                        backgroundColor: colors.surface,
-                        color: colors.textLight,
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.bold,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        border: `2px solid ${colors.border}`,
-                        borderRadius: radii.sm,
-                      }}>
-                        PENDING
-                      </span>
-                    )}
+                        cursor: isPicked ? 'default' : 'pointer',
+                        minWidth: '110px',
+                      }}
+                    >
+                      {isPicked ? '✓ Picked' : actionLoadingId === item.book_title_id ? 'Scanning…' : 'Scan'}
+                    </button>
                   </td>
                 </tr>
               );
@@ -239,7 +476,7 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
         justifyContent: 'space-between',
       }}>
         <Link
-          href={`/pick-slip/${bundle.id}`}
+          href={`/pick-slip/${bundleId ?? ''}`}
           style={{
             display: 'inline-block',
             padding: `${spacing.md} ${spacing.xl}`,
@@ -257,7 +494,8 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
         </Link>
 
         <button
-          disabled={!allPicked}
+          disabled={!allPicked || completeLoading}
+          onClick={handleComplete}
           style={{
             padding: `${spacing.md} ${spacing.xl}`,
             backgroundColor: allPicked ? colors.primary : colors.border,
@@ -270,7 +508,7 @@ export default function PickBundle({ params }: { params: { bundleId: string } })
             cursor: allPicked ? 'pointer' : 'not-allowed',
           }}
         >
-          COMPLETE PICKING →
+          {completeLoading ? 'Completing…' : 'Complete Picking →'}
         </button>
       </div>
     </div>
