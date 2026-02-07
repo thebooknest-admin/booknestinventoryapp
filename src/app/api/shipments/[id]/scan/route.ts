@@ -8,9 +8,10 @@ const supabase = createClient(
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params;
     const body = await request.json();
     const { book_title_id } = body;
 
@@ -21,6 +22,7 @@ export async function POST(
       );
     }
 
+    // Mark the book as scanned
     const { data, error } = await supabase
       .from('shipment_books')
       .update({

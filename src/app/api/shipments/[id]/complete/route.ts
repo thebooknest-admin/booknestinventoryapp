@@ -8,9 +8,12 @@ const supabase = createClient(
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params;
+    
+    // Check if all books are picked
     const { data: books, error: booksError } = await supabase
       .from('shipment_books')
       .select('scanned_at')
@@ -29,6 +32,7 @@ export async function POST(
       );
     }
 
+    // Update shipment status to shipping
     const { data, error } = await supabase
       .from('shipments')
       .update({

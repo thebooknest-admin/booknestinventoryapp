@@ -8,9 +8,11 @@ const supabase = createClient(
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params;
+    
     const { data, error } = await supabase.rpc('get_shipment_pick_list', {
       p_shipment_id: params.id
     });
