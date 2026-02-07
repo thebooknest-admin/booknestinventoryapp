@@ -18,6 +18,7 @@ type PickListItem = {
 type PickListRow = PickListItem & {
   title: string;
   author: string;
+  sku: string;
   isPicked: boolean;
 };
 
@@ -39,6 +40,7 @@ const mapPickListRow = (item: PickListItem): PickListRow => {
     ...item,
     title,
     author,
+    sku: item.book_title_id,
     isPicked: item.status?.includes('PICKED') || Boolean(item.scanned_at),
   };
 };
@@ -132,7 +134,8 @@ export default function PickBundle() {
     if (!trimmed) return;
     setError(null);
     setSuccessMessage(null);
-    const match = items.find((item) => item.book_title_id === trimmed);
+    const normalized = trimmed.toUpperCase();
+    const match = items.find((item) => item.sku.toUpperCase() === normalized);
     if (!match) {
       setError('Scanned ID does not match any book in this pick list.');
       return;
@@ -284,7 +287,7 @@ export default function PickBundle() {
                 handleScanSubmit();
               }
             }}
-            placeholder="Scan book_title_id"
+            placeholder="Scan Book Nest SKU (e.g., BN-FLED-0214)"
             style={{
               width: '100%',
               padding: `${spacing.sm} ${spacing.md}`,
@@ -335,7 +338,7 @@ export default function PickBundle() {
           color: colors.textLight,
           fontSize: typography.fontSize.sm,
         }}>
-          Tip: scan the barcode or paste the book title ID to mark it picked.
+          Tip: scan the Book Nest SKU barcode (e.g., BN-FLED-0214) to mark it picked.
         </div>
       </div>
 
@@ -403,6 +406,17 @@ export default function PickBundle() {
                 fontWeight: typography.fontWeight.bold,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
+                width: '18%',
+              }}>
+                Book Nest SKU
+              </th>
+              <th style={{
+                padding: spacing.md,
+                textAlign: 'left',
+                fontSize: typography.fontSize.sm,
+                fontWeight: typography.fontWeight.bold,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
               }}>
                 Title
               </th>
@@ -413,7 +427,7 @@ export default function PickBundle() {
                 fontWeight: typography.fontWeight.bold,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
-                width: '15%',
+                width: '20%',
               }}>
                 Instruction
               </th>
@@ -424,7 +438,7 @@ export default function PickBundle() {
                 fontWeight: typography.fontWeight.bold,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
-                width: '15%',
+                width: '14%',
               }}>
                 Status
               </th>
@@ -434,7 +448,7 @@ export default function PickBundle() {
             {loading && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   style={{
                     padding: spacing.lg,
                     textAlign: 'center',
@@ -449,7 +463,7 @@ export default function PickBundle() {
             {!loading && items.length === 0 && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   style={{
                     padding: spacing.lg,
                     textAlign: 'center',
@@ -484,6 +498,15 @@ export default function PickBundle() {
                     fontFamily: 'monospace',
                   }}>
                     {item.bin_label || '—'}
+                  </td>
+                  <td style={{
+                    padding: spacing.md,
+                    fontSize: typography.fontSize.base,
+                    color: colors.primary,
+                    fontFamily: 'monospace',
+                    fontWeight: typography.fontWeight.bold,
+                  }}>
+                    {item.sku}
                   </td>
                   <td style={{
                     padding: spacing.md,
