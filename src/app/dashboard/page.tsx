@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import { getInventory, updateBookCopy } from '@/app/actions/inventory';
+import { getQueueStats } from '@/app/actions/getQueueStats';
 
 interface InventoryItem {
   id: string;
@@ -92,44 +93,30 @@ export default function Dashboard() {
   }, []);
 
   async function loadInventoryAndStats() {
-    setIsLoading(true);
+  setIsLoading(true);
 
-    try {
-      const result = await getInventory();
+  try {
+    // Fetch inventory and stats in parallel
+    const [inventoryResult, statsResult] = await Promise.all([
+      getInventory(),
+      getQueueStats()
+    ]);
 
-      if (result.success && result.inventory) {
-        // Filter out retired books
-        const activeInventory = result.inventory.filter((item) => item.status !== 'retired');
-        
-        setInventory(activeInventory);
-        setFilteredInventory(activeInventory);
-
-        // Calculate stats from active inventory only
-        const pickingQueue = 0;
-        const shippingQueue = 0;
-
-        // Completed today - books that were shipped today
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const completedToday = activeInventory.filter((item) => {
-          if (item.status !== 'shipped') return false;
-          const receivedDate = new Date(item.receivedAt);
-          receivedDate.setHours(0, 0, 0, 0);
-          return receivedDate.getTime() === today.getTime();
-        }).length;
-
-        setStats({
-          pickingQueue,
-          shippingQueue,
-          completedToday,
-        });
-      }
-    } catch (err) {
-      console.error('Failed to load inventory:', err);
-    } finally {
-      setIsLoading(false);
+    if (inventoryResult.success && inventoryResult.inventory) {
+      const activeInventory = inventoryResult.inventory.filter((item) => item.status !== 'retired');
+      setInventory(activeInventory);
+      setFilteredInventory(activeInventory);
     }
+
+    if (statsResult.success && statsResult.stats) {
+      setStats(statsResult.stats);
+    }
+  } catch (err) {
+    console.error('Failed to load inventory:', err);
+  } finally {
+    setIsLoading(false);
   }
+}
 
   // Apply filters and sorting
   useEffect(() => {
@@ -889,6 +876,7 @@ export default function Dashboard() {
                         fontWeight: typography.fontWeight.bold,
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap'
                       }}
                     >
                       Status
