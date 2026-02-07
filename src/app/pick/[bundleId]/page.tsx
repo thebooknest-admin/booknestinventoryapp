@@ -13,7 +13,7 @@ type PickListItem = {
   book_to_find: string | null;
   status: string | null;
   scanned_at: string | null;
-  book_copy_sku: string | null;  // Added this field
+  book_sku: string | null;  // Changed from book_copy_sku to match SQL function
 };
 
 type PickListRow = PickListItem & {
@@ -41,7 +41,7 @@ const mapPickListRow = (item: PickListItem): PickListRow => {
     ...item,
     title,
     author,
-    sku: item.book_copy_sku || item.book_title_id,  // Use actual SKU, fallback to UUID
+    sku: item.book_sku || item.book_title_id,  // Use book_sku from SQL function
     isPicked: item.status?.includes('PICKED') || Boolean(item.scanned_at),
   };
 };
@@ -80,7 +80,7 @@ export default function PickBundle() {
       const data = (await response.json()) as PickListItem[];
       const sorted = data
         .map(mapPickListRow)
-        .sort((a, b) => (a.bin_label || '').localeCompare(b.bin_label || ''));
+        .sort((a, b) => (a.bin_id || '').localeCompare(b.bin_id || ''));  // Sort by bin_id for proper SKU ordering
       setItems(sorted);
     } catch (err) {
       console.error('Error loading pick list:', err);
@@ -239,140 +239,144 @@ export default function PickBundle() {
             color: colors.primary,
             margin: 0,
           }}>
-            PICK LIST #{bundleId ?? '—'}
+            PICK LIST #{bundleId?.slice(0, 8) || ''}
           </h1>
           <div style={{
             fontSize: typography.fontSize['2xl'],
             fontWeight: typography.fontWeight.bold,
-            color: allPicked ? colors.sageMist : colors.primary,
+            color: colors.primary,
           }}>
             {pickedCount} / {totalCount}
           </div>
         </div>
       </header>
 
+      {/* Error Message */}
+      {error && (
+        <div
+          style={{
+            padding: spacing.md,
+            backgroundColor: '#fee',
+            color: '#c33',
+            border: '2px solid #c33',
+            borderRadius: radii.md,
+            marginBottom: spacing.lg,
+            fontSize: typography.fontSize.base,
+            fontWeight: typography.fontWeight.semibold,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Success Message */}
+      {successMessage && (
+        <div
+          style={{
+            padding: spacing.md,
+            backgroundColor: '#efe',
+            color: '#3a3',
+            border: '2px solid #3a3',
+            borderRadius: radii.md,
+            marginBottom: spacing.lg,
+            fontSize: typography.fontSize.base,
+            fontWeight: typography.fontWeight.semibold,
+          }}
+        >
+          {successMessage}
+        </div>
+      )}
+
       {/* Scan Input */}
       <div style={{
-        marginBottom: spacing.lg,
-        padding: spacing.md,
-        borderRadius: radii.md,
+        marginBottom: spacing.xl,
+        padding: spacing.lg,
         backgroundColor: colors.surface,
         border: `2px solid ${colors.border}`,
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: spacing.md,
+        borderRadius: radii.md,
       }}>
-        <div style={{ flex: '1 1 260px' }}>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.textLight,
-            marginBottom: spacing.xs,
+        <label
+          htmlFor="scan-input"
+          style={{
+            display: 'block',
+            marginBottom: spacing.sm,
+            fontSize: typography.fontSize.base,
+            fontWeight: typography.fontWeight.semibold,
+            color: colors.text,
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
-          }}>
-            Scan book barcode
-          </div>
+          }}
+        >
+          SCAN BOOK BARCODE
+        </label>
+        <div style={{ display: 'flex', gap: spacing.md, alignItems: 'center' }}>
           <input
+            id="scan-input"
+            type="text"
+            placeholder="Scan Book Nest SKU (e.g., BN-FLED-0214)"
             value={scanInput}
-            onChange={(event) => {
-              setScanInput(event.target.value);
-              if (error) {
-                setError(null);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
+            onChange={(e) => setScanInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
                 handleScanSubmit();
               }
             }}
-            placeholder="Scan Book Nest SKU (e.g., BN-FLED-0214)"
+            autoFocus
             style={{
-              width: '100%',
-              padding: `${spacing.sm} ${spacing.md}`,
-              borderRadius: radii.sm,
+              flex: 1,
+              padding: spacing.md,
+              fontSize: typography.fontSize.lg,
               border: `2px solid ${colors.border}`,
-              fontSize: typography.fontSize.base,
+              borderRadius: radii.sm,
+              fontFamily: 'monospace',
             }}
           />
+          <button
+            onClick={handleScanSubmit}
+            disabled={!scanInput.trim()}
+            style={{
+              padding: `${spacing.md} ${spacing.xl}`,
+              backgroundColor: scanInput.trim() ? colors.primary : colors.border,
+              color: scanInput.trim() ? colors.cream : colors.textLight,
+              border: 'none',
+              fontSize: typography.fontSize.lg,
+              fontWeight: typography.fontWeight.bold,
+              textTransform: 'uppercase',
+              borderRadius: radii.md,
+              cursor: scanInput.trim() ? 'pointer' : 'not-allowed',
+            }}
+          >
+            SCAN
+          </button>
+          <button
+            onClick={handleClearScans}
+            disabled={loading}
+            style={{
+              padding: `${spacing.md} ${spacing.lg}`,
+              backgroundColor: colors.surface,
+              color: colors.primary,
+              border: `2px solid ${colors.primary}`,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.bold,
+              textTransform: 'uppercase',
+              borderRadius: radii.md,
+              cursor: 'pointer',
+            }}
+          >
+            CLEAR SCANS
+          </button>
         </div>
-        <button
-          onClick={handleScanSubmit}
-          disabled={!scanInput.trim()}
-          style={{
-            padding: `${spacing.sm} ${spacing.lg}`,
-            backgroundColor: scanInput.trim() ? colors.primary : colors.border,
-            color: scanInput.trim() ? colors.cream : colors.textLight,
-            border: `2px solid ${scanInput.trim() ? colors.primary : colors.border}`,
-            fontSize: typography.fontSize.base,
-            fontWeight: typography.fontWeight.bold,
-            textTransform: 'uppercase',
-            borderRadius: radii.sm,
-            cursor: scanInput.trim() ? 'pointer' : 'not-allowed',
-            height: 'fit-content',
-          }}
-        >
-          Scan
-        </button>
-        <button
-          onClick={handleClearScans}
-          disabled={loading || items.length === 0}
-          style={{
-            padding: `${spacing.sm} ${spacing.lg}`,
-            backgroundColor: colors.surface,
-            color: colors.primary,
-            border: `2px solid ${colors.primary}`,
-            fontSize: typography.fontSize.base,
-            fontWeight: typography.fontWeight.bold,
-            textTransform: 'uppercase',
-            borderRadius: radii.sm,
-            cursor: loading || items.length === 0 ? 'not-allowed' : 'pointer',
-            height: 'fit-content',
-          }}
-        >
-          Clear Scans
-        </button>
         <div style={{
-          flex: '1 1 220px',
-          color: colors.textLight,
+          marginTop: spacing.sm,
           fontSize: typography.fontSize.sm,
+          color: colors.textLight,
         }}>
           Tip: scan the Book Nest SKU barcode (e.g., BN-FLED-0214) to mark it picked.
         </div>
       </div>
 
       {/* Pick List Table */}
-      {error && (
-        <div style={{
-          marginBottom: spacing.lg,
-          padding: spacing.md,
-          borderRadius: radii.md,
-          backgroundColor: colors.cream,
-          border: `2px solid ${colors.primary}`,
-          color: colors.primary,
-          fontSize: typography.fontSize.base,
-          fontWeight: typography.fontWeight.semibold,
-        }}>
-          {error}
-        </div>
-      )}
-      {successMessage && (
-        <div style={{
-          marginBottom: spacing.lg,
-          padding: spacing.md,
-          borderRadius: radii.md,
-          backgroundColor: colors.sageMist,
-          border: `2px solid ${colors.success}`,
-          color: colors.deepCocoa,
-          fontSize: typography.fontSize.base,
-          fontWeight: typography.fontWeight.semibold,
-        }}>
-          {successMessage}
-        </div>
-      )}
-
       <div style={{
         backgroundColor: colors.surface,
         border: `2px solid ${colors.border}`,
@@ -493,12 +497,12 @@ export default function PickBundle() {
                 >
                   <td style={{
                     padding: spacing.md,
-                    fontSize: typography.fontSize.xl,
+                    fontSize: typography.fontSize.base,
                     fontWeight: typography.fontWeight.bold,
                     color: colors.text,
                     fontFamily: 'monospace',
                   }}>
-                    {item.bin_label || '—'}
+                    {item.bin_id || '—'}
                   </td>
                   <td style={{
                     padding: spacing.md,
