@@ -13,7 +13,7 @@ type PickListItem = {
   book_to_find: string | null;
   status: string | null;
   scanned_at: string | null;
-  book_sku: string | null;  // Changed from book_copy_sku to match SQL function
+  book_sku: string | null;
 };
 
 type PickListRow = PickListItem & {
@@ -41,7 +41,7 @@ const mapPickListRow = (item: PickListItem): PickListRow => {
     ...item,
     title,
     author,
-    sku: item.book_sku || item.book_title_id,  // Use book_sku from SQL function
+    sku: item.book_sku || item.book_title_id,
     isPicked: item.status?.includes('PICKED') || Boolean(item.scanned_at),
   };
 };
@@ -53,6 +53,7 @@ export default function PickBundle() {
     : params.bundleId;
   const router = useRouter();
   const [items, setItems] = useState<PickListRow[]>([]);
+  const [orderNumber, setOrderNumber] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +70,8 @@ export default function PickBundle() {
       setLoading(true);
       setError(null);
       setSuccessMessage(null);
+      
+      // Fetch pick list
       const response = await fetch(`/api/shipments/${bundleId}/pick-list`, {
         cache: 'no-store',
       });
@@ -80,8 +83,18 @@ export default function PickBundle() {
       const data = (await response.json()) as PickListItem[];
       const sorted = data
         .map(mapPickListRow)
-        .sort((a, b) => (a.bin_id || '').localeCompare(b.bin_id || ''));  // Sort by bin_id for proper SKU ordering
+        .sort((a, b) => (a.bin_id || '').localeCompare(b.bin_id || ''));
       setItems(sorted);
+      
+      // Fetch shipment info for order number
+      const shipmentResponse = await fetch(`/api/shipments/${bundleId}`, {
+        cache: 'no-store',
+      });
+      
+      if (shipmentResponse.ok) {
+        const shipmentData = await shipmentResponse.json();
+        setOrderNumber(shipmentData.order_number || '');
+      }
     } catch (err) {
       console.error('Error loading pick list:', err);
       setError('Unable to load pick list. Please try again.');
@@ -239,7 +252,7 @@ export default function PickBundle() {
             color: colors.primary,
             margin: 0,
           }}>
-            PICK LIST #{bundleId?.slice(0, 8) || ''}
+            PICK LIST #{orderNumber || bundleId?.slice(0, 8) || ''}
           </h1>
           <div style={{
             fontSize: typography.fontSize['2xl'],
