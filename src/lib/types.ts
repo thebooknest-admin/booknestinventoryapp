@@ -1,11 +1,9 @@
 // =====================================================
 // SHARED TYPES - INTEGRATION CONTRACT
 // =====================================================
-
 export type BundleStatus = 'picking' | 'picked' | 'shipped' | 'current' | 'returned' | 'completed';
 export type SubscriptionStatus = 'active' | 'paused' | 'cancelled';
 export type OnboardingStatus = 'incomplete' | 'complete';
-
 // Updated to support both old and new tier naming
 export type Tier = 'cozy_nest' | 'growing_nest' | 'family_nest' | 'little-nest' | 'cozy-nest' | 'story-nest' | 'Little Nest' | 'Cozy Nest' | 'Story Nest';
 
@@ -24,6 +22,7 @@ export interface Member {
 
 export interface Bundle {
   id: string;
+  order_number?: string; // ADD THIS LINE
   member_id: string;
   status: BundleStatus;
   ship_by: string | null;
@@ -55,6 +54,7 @@ export interface BundleItem {
 
 export interface OpsPickingQueueItem {
   bundle_id: string;
+  order_number?: string; // ADD THIS LINE
   member_id?: string;
   status?: BundleStatus;
   ship_by: string | null;

@@ -19,6 +19,7 @@ export async function getPickingQueue(): Promise<OpsPickingQueueItem[]> {
   // Map the new structure to your existing OpsPickingQueueItem type
   return (data || []).map((item: any) => ({
     bundle_id: item.shipment_id,
+    order_number: item.order_number, // Add order number
     member_id: '', // Add if needed
     status: 'picking' as BundleStatus,
     first_name: item.member_name.split(' ')[0] || item.member_name,
@@ -44,6 +45,7 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
     .from('shipments')
     .select(`
       id,
+      order_number,
       member_id,
       created_at,
       shipment_date,
@@ -65,6 +67,7 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
 
   return (data || []).map((item: any) => ({
     bundle_id: item.id,
+    order_number: item.order_number, // Add order number
     member_id: item.member_id,
     status: 'shipping' as BundleStatus,
     first_name: item.members?.name?.split(' ')[0] || '',
@@ -106,6 +109,7 @@ export async function getBundleDetails(bundleId: string): Promise<{ bundle: Bund
   // Map to old Bundle structure for UI compatibility
   const bundle: Bundle = {
     id: shipment.id,
+    order_number: shipment.order_number, // Add order number
     member_id: shipment.member_id,
     status: shipment.status,
     ship_by: null,
@@ -120,7 +124,7 @@ export async function getBundleDetails(bundleId: string): Promise<{ bundle: Bund
     bundle_id: bundleId,
     child_id: null,
     sku: '',
-    title: item.book_to_find.replace('📖 Find: "', '').split('" by ')[0].replace('"', ''),
+    title: item.book_to_find.replace('📖 Find: "', '').replace('📖 "', '').split('" by ')[0].replace('"', ''),
     author: item.book_to_find.split('" by ')[1] || '',
     age_group: shipment.members?.age_group || '',
     keep_status: 'active' as const,
