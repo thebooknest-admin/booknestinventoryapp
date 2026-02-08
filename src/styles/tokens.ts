@@ -20,6 +20,8 @@ export const colors = {
   success: '#A3BFAA',
   warning: '#F4C430',
   text: '#3D2817',
+  textMuted: '#6B7280',
+  textSecondary: '#6B5D54',
   textLight: '#8B6F47',
   surface: '#FFFFFF',
   border: '#D4C5B9',

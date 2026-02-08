@@ -4,9 +4,9 @@ export function supabaseServer() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !key) {
-    throw new Error('Missing Supabase env vars. Check .env.local');
-  }
+if (!url || !key) {
+  throw new Error(`Missing Supabase env vars. URL: ${!!url}, Key: ${!!key}`);
+}
 
   return createClient(url, key, {auth: {persistSession: false}});
 }

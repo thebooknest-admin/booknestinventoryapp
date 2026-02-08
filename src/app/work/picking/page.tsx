@@ -2,10 +2,49 @@ import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import ActionButton from '@/components/ActionButton';
 import { getPickingQueue } from '@/lib/queries';
-import { getTierDisplayName } from '@/lib/types';
+import { getTierBookCount, getTierDisplayName } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+const SHIPPING_DAYS = [2, 5]; // Tuesday (2) and Friday (5)
+
+function getNextShipDate(orderDate: Date): Date {
+  const shipDate = new Date(orderDate);
+  shipDate.setHours(0, 0, 0, 0);
+
+  while (!SHIPPING_DAYS.includes(shipDate.getDay())) {
+    shipDate.setDate(shipDate.getDate() + 1);
+  }
+
+  return shipDate;
+}
+
+function formatShipDate(createdAt: string): string {
+  if (!createdAt) {
+    return 'TBD';
+  }
+
+  const nextShipDate = getNextShipDate(new Date(createdAt));
+  return nextShipDate.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatOrderDate(createdAt: string): string {
+  if (!createdAt) {
+    return '—';
+  }
+
+  return new Date(createdAt).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 export default async function PickingQueue() {
   const bundles = await getPickingQueue();
@@ -32,85 +71,54 @@ export default async function PickingQueue() {
               display: 'inline-block',
               color: colors.primary,
               textDecoration: 'none',
-              fontSize: typography.fontSize.base,
+              fontSize: typography.fontSize.sm,
               fontWeight: typography.fontWeight.semibold,
-              marginBottom: spacing.sm,
+              marginBottom: spacing.xs,
             }}
           >
-            ← DASHBOARD
+            ← Back to Dashboard
           </Link>
           <h1 style={{
-            fontFamily: typography.fontFamily.heading,
             fontSize: typography.fontSize['3xl'],
             fontWeight: typography.fontWeight.bold,
-            color: colors.primary,
+            color: colors.text,
             margin: 0,
           }}>
             Picking Queue
           </h1>
         </div>
-        <div style={{
-          fontSize: typography.fontSize['2xl'],
-          fontWeight: typography.fontWeight.bold,
-          color: colors.primary,
-        }}>
-          {bundles.length} ORDERS
-        </div>
       </header>
 
-      {/* Empty State */}
-      {bundles.length === 0 && (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: spacing['3xl'],
-            backgroundColor: colors.surface,
-            border: `3px solid ${colors.border}`,
-            borderRadius: radii.md,
-          }}
-        >
-          <div style={{
-            fontSize: typography.fontSize['3xl'],
-            marginBottom: spacing.md,
-          }}>
-            📦
-          </div>
-          <h2 style={{
-            fontSize: typography.fontSize.xl,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-            margin: 0,
-            marginBottom: spacing.sm,
-          }}>
-            No Orders to Pick
-          </h2>
+      {bundles.length === 0 ? (
+        <div style={{
+          textAlign: 'center',
+          padding: spacing['2xl'],
+          backgroundColor: colors.surface,
+          borderRadius: radii.lg,
+        }}>
           <p style={{
-            fontSize: typography.fontSize.base,
-            color: colors.textLight,
-            margin: 0,
+            fontSize: typography.fontSize.xl,
+            color: colors.text,
           }}>
-            The picking queue is empty. Orders will appear here when members complete onboarding.
+            No bundles to pick right now!
           </p>
         </div>
-      )}
-
-      {/* Table View */}
-      {bundles.length > 0 && (
+      ) : (
         <div style={{
           backgroundColor: colors.surface,
-          border: `2px solid ${colors.border}`,
-          borderRadius: radii.md,
+          borderRadius: radii.lg,
           overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
         }}>
           <table style={{
             width: '100%',
             borderCollapse: 'collapse',
           }}>
-            <thead>
-              <tr style={{
-                backgroundColor: colors.primary,
-                color: colors.cream,
-              }}>
+            <thead style={{
+              backgroundColor: colors.cream,
+              borderBottom: `2px solid ${colors.border}`,
+            }}>
+              <tr>
                 <th style={{
                   padding: spacing.md,
                   textAlign: 'left',
@@ -119,7 +127,7 @@ export default async function PickingQueue() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                 }}>
-                  Member
+                  Order Date
                 </th>
                 <th style={{
                   padding: spacing.md,
@@ -129,7 +137,7 @@ export default async function PickingQueue() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                 }}>
-                  Email
+                  Order #
                 </th>
                 <th style={{
                   padding: spacing.md,
@@ -140,6 +148,16 @@ export default async function PickingQueue() {
                   letterSpacing: '0.05em',
                 }}>
                   Tier
+                </th>
+                <th style={{
+                  padding: spacing.md,
+                  textAlign: 'left',
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}>
+                  Books
                 </th>
                 <th style={{
                   padding: spacing.md,
@@ -174,18 +192,17 @@ export default async function PickingQueue() {
                 >
                   <td style={{
                     padding: spacing.md,
-                    fontSize: typography.fontSize.lg,
-                    fontWeight: typography.fontWeight.bold,
+                    fontSize: typography.fontSize.base,
                     color: colors.text,
                   }}>
-                    {bundle.first_name} {bundle.last_name}
+                    {formatOrderDate(bundle.created_at)}
                   </td>
                   <td style={{
                     padding: spacing.md,
                     fontSize: typography.fontSize.base,
                     color: colors.text,
                   }}>
-                    {bundle.email}
+                    {bundle.order_number || '—'}
                   </td>
                   <td style={{
                     padding: spacing.md,
@@ -209,7 +226,14 @@ export default async function PickingQueue() {
                     fontSize: typography.fontSize.base,
                     color: colors.text,
                   }}>
-                    {bundle.ship_by ? new Date(bundle.ship_by).toLocaleDateString() : 'ASAP'}
+                    {bundle.books_to_pick ?? getTierBookCount(bundle.tier)}
+                  </td>
+                  <td style={{
+                    padding: spacing.md,
+                    fontSize: typography.fontSize.base,
+                    color: colors.text,
+                  }}>
+                    {formatShipDate(bundle.created_at)}
                   </td>
                   <td style={{
                     padding: spacing.md,
