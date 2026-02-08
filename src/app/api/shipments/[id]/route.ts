@@ -6,51 +6,64 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Define the type for the query result
-type ShipmentQueryResult = {
-  id: string;
-  created_at: string;
-  members: {
-    name: string;
-    tier: string;
-  }[];
-};
-
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const params = await context.params;
-
-    const { data, error } = await supabase
-      .from('shipments')
-      .select(
-        `
-        id,
-        created_at,
-        members (
-          name,
-          tier
-        )
-      `
+    const selectWithOrderNumber = `
+      id,
+      created_at,
+      order_number,
+      members (
+        name,
+        tier
       )
+    `;
+
+    const selectWithoutOrderNumber = `
+      id,
+      created_at,
+      members (
+        name,
+        tier
+      )
+    `;
+
+    const { data: initialData, error: initialError } = await supabase
+      .from('shipments')
+      .select(selectWithOrderNumber)
       .eq('id', params.id)
       .single();
 
-    if (error) {
-      console.error('Error fetching shipment:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    let data = initialData as typeof initialData & { order_number?: number | string | null };
+    let error = initialError;
+
+    if (error && error.message?.includes('order_number')) {
+      const fallback = await supabase
+        .from('shipments')
+        .select(selectWithoutOrderNumber)
+        .eq('id', params.id)
+        .single();
+      data = fallback.data as typeof data;
+      error = fallback.error;
     }
 
-    const typedData = data as unknown as ShipmentQueryResult;
-    const member = Array.isArray(typedData.members) ? typedData.members[0] : typedData.members;
+    if (error || !data) {
+      console.error('Error fetching shipment:', error);
+      return NextResponse.json({ error: error?.message || 'Shipment not found' }, { status: 500 });
+    }
+
+    const member = Array.isArray(data.members) ? data.members[0] : data.members;
+    const orderNumber = data.order_number ?? null;
 
     return NextResponse.json({
-      id: typedData.id,
+      id: data.id,
+      orderNumber,
       memberName: member?.name || 'Unknown',
       tier: member?.tier || '',
-      createdAt: typedData.created_at,
+      createdAt: data.created_at,
     });
   } catch (err) {
     console.error('Unexpected error:', err);
