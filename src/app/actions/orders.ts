@@ -27,7 +27,7 @@ interface ShipmentRecord {
   members: {
     name: string | null;
     email: string | null;
-  } | null;
+  } [] | null;
   shipment_books: { id: string }[] | null;
 }
 
@@ -62,8 +62,8 @@ export async function getOrders(): Promise<GetOrdersResult> {
     const orders = (data || []).map((record: ShipmentRecord) => ({
       id: record.id,
       orderNumber: record.order_number,
-      memberName: record.members?.name || null,
-      memberEmail: record.members?.email || null,
+      memberName: record.members?.[0]?.name || null,
+      memberEmail: record.members?.[0]?.email || null,
       status: record.status,
       createdAt: record.created_at,
       total: null,
