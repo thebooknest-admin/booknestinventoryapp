@@ -28,6 +28,17 @@ export async function receiveBook(
 
     const cleanIsbn = bookInfo.isbn.replace(/[-\s]/g, '');
 
+    function getAgeCode(ageGroup: string):
+    string {
+      const map: Record<string, string> = {
+        hatchlings: 'HATCH',
+        fledglings: 'FLED',
+        soarers: 'SOAR',
+        sky_readers: 'SKY',
+      };
+      return map[ageGroup] || 'GEN';
+    }
+    
     // Check if book title already exists
     const { data: existingTitle, error: titleLookupError } = await supabase
       .from('book_titles')
@@ -74,6 +85,21 @@ export async function receiveBook(
       }
     }
 
+const ageCode =
+getAgeCode(copyInfo.ageGroup);
+
+const { count: existingCount, error: countError } = await supabase
+.from('book_copies')
+.select('*', { count: 'exact', head: true })
+.eq('age_group', copyInfo.ageGroup);
+if (countError) {
+  console.error('Error counting existing copies:', countError);
+  return { success: false, error: 'Failed to generate SKU' };
+}
+
+const nextNumber = (existingCount || 0) + 1;
+const generatedSku = `BN-${ageCode}-${String(nextNumber).padStart(4, '0')}`;
+
     // Create new book copy
     const { data: newCopy, error: copyError } = await supabase
       .from('book_copies')
@@ -81,26 +107,30 @@ export async function receiveBook(
         book_title_id: bookTitleId,
         isbn: copyInfo.isbn,
         age_group: copyInfo.ageGroup,
-        bin: copyInfo.bin,
+        bin_id: copyInfo.bin,
         status: 'in_house',
+        sku: generatedSku,
       })
       .select('sku')
       .single();
 
     if (copyError || !newCopy) {
-      console.error('Error creating book copy:', copyError);
-      return { success: false, error: 'Failed to create book copy' };
-    }
+console.error('Error creating book copy:', copyError);
+return { success: false, error: copyError?.message || 'Failed to create book copy' };
+}
 
     revalidatePath('/dashboard');
     revalidatePath('/receive');
 
     return {
       success: true,
-      sku: newCopy.sku,
+      sku: newCopy.sku || generatedSku
     };
   } catch (error) {
-    console.error('Unexpected error in receiveBook:', error);
-    return { success: false, error: 'An unexpected error occurred' };
-  }
+console.error('Unexpected error in receiveBook:', error);
+return {
+success: false,
+error: error instanceof Error ? error.message : String(error),
+};
+}
 }

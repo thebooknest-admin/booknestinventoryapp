@@ -9,7 +9,6 @@ interface BookCopyInfo {
   isbn: string;
   status: string;
   bin: string;
-  condition: string;
   ageGroup: string;
   title: string;
   author: string;
@@ -38,8 +37,7 @@ interface BookCopyRecord {
   sku: string;
   isbn: string;
   status: string;
-  bin: string;
-  condition: string;
+  bin_id: string;
   age_group: string;
   book_titles: BookTitleRecord[] | BookTitleRecord | null;
 }
@@ -55,8 +53,7 @@ export async function getBookCopybySku(sku: string): Promise<GetBookCopyResult> 
         sku,
         isbn,
         status,
-        bin,
-        condition,
+        bin_id,
         age_group,
         book_titles (
           title,
@@ -96,8 +93,7 @@ export async function getBookCopybySku(sku: string): Promise<GetBookCopyResult> 
       sku: bookCopyData.sku,
       isbn: bookCopyData.isbn,
       status: bookCopyData.status,
-      bin: bookCopyData.bin,
-      condition: bookCopyData.condition,
+      bin: bookCopyData.bin_id,
       ageGroup: bookCopyData.age_group,
       title: bookTitleData.title,
       author: bookTitleData.author,

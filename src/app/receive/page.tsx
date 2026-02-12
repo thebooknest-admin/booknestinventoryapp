@@ -42,6 +42,13 @@ export default function ReceivePage() {
   } | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
 
+  const [binOptions, setBinOptions] = useState<Array<{
+bin_code: string;
+display_name: string | null;
+age_group: string;
+theme: string | null;
+}>>([]);
+
   // Bin suggestion state
   const [binSuggestion, setBinSuggestion] = useState<string | null>(null);
   const [isFetchingBin, setIsFetchingBin] = useState(false);
@@ -72,7 +79,7 @@ export default function ReceivePage() {
         const data = await response.json();
         if (data.suggestedBin) {
           setBinSuggestion(data.suggestedBin);
-          setBin(data.suggestedBin);
+          setBin(data.suggestedBinCode || data.suggestedBin || '');
         }
       }
     } catch (err) {
@@ -82,52 +89,98 @@ export default function ReceivePage() {
     }
   };
 
+const loadBinsForAgeGroup = async (selectedAgeGroup: string) => {
+if (!selectedAgeGroup) {
+setBinOptions([]);
+return;
+}
+try {
+const res = await fetch(`/api/bins?ageGroup=${encodeURIComponent(selectedAgeGroup)}`);
+if (!res.ok) return;
+const data = await res.json();
+setBinOptions(data.bins || []);
+} catch (err) {
+console.error('Failed to load bins:', err);
+}
+};
+
   const fetchAgeAndThemeSuggestion = async (bookData: BookData) => {
-    setIsSuggesting(true);
-    setAgeSuggestion(null);
-    setThemeSuggestion(null);
+setIsSuggesting(true);
+setAgeSuggestion(null);
+setThemeSuggestion(null);
+setBinSuggestion(null);
 
-    try {
-      const response = await fetch('/api/suggest-age-theme', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: bookData.title,
-          author: bookData.author,
-          isbn: bookData.isbn,
-        }),
-      });
+try {
+const response = await fetch('/api/suggest-classification', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+title: bookData.title,
+author: bookData.author,
+isbn: bookData.isbn,
+description: '',
+subjects: [],
+format: '',
+}),
+});
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.ageGroup) {
-          setAgeSuggestion({
-            category: data.ageGroup,
-            explanation: data.ageExplanation,
-          });
-          setAgeGroup(data.ageGroup);
-        }
-        if (data.theme) {
-          setThemeSuggestion({
-            theme: data.theme,
-            explanation: data.themeExplanation,
-          });
-          setTheme(data.theme);
+if (!response.ok) {
+throw new Error('Failed to get classification suggestion');
+}
+const data = await response.json();
 
-          // Now fetch bin suggestion with both age and theme
-          if (data.ageGroup) {
-            fetchBinSuggestion(data.ageGroup, data.theme);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to get suggestions:', err);
-    } finally {
-      setIsSuggesting(false);
-    }
-  };
+const tierToAgeGroup: Record<string, string> = {
+HATCH: 'hatchlings',
+FLED: 'fledglings',
+SOAR: 'soarers',
+SKY: 'sky_readers',
+};
+
+const tierToPrefix: Record<string, string> = {
+HATCH: 'HATCH',
+FLED: 'FLED',
+SOAR: 'SOAR',
+SKY: 'SKY',
+};
+// Age suggestion
+if (data.suggested_age_tier) {
+const mappedAgeGroup = tierToAgeGroup[data.suggested_age_tier];
+if (mappedAgeGroup) {
+setAgeGroup(mappedAgeGroup);
+setAgeSuggestion({
+category: mappedAgeGroup,
+explanation: `${data.reason || 'Suggested by rules engine'} (confidence: ${Math.round((data.confidence || 0) * 100)}%)`,
+});
+
+// Load bins for that age group
+await loadBinsForAgeGroup(mappedAgeGroup);
+}
+}
+// Bin/theme suggestion
+if (data.suggested_bin) {
+const binName = String(data.suggested_bin).toUpperCase();
+setTheme(binName.toLowerCase());
+setThemeSuggestion({
+theme: binName.toLowerCase(),
+explanation: `${data.reason || 'Suggested by rules engine'} (confidence: ${Math.round((data.confidence || 0) * 100)}%)`,
+});
+
+// Auto-pick canonical -01 bin (e.g., SOAR-ADVENTURE-01)
+if (data.suggested_age_tier) {
+const prefix = tierToPrefix[data.suggested_age_tier];
+if (prefix) {
+const autoBin = `${prefix}-${binName}-01`;
+setBin(autoBin);
+setBinSuggestion(autoBin);
+}
+}
+}
+} catch (err) {
+console.error('Failed to get suggestions:', err);
+} finally {
+setIsSuggesting(false);
+}
+};
 
   const handleIsbnScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -782,6 +835,7 @@ export default function ReceivePage() {
                 value={ageGroup}
                 onChange={(e) => {
                   setAgeGroup(e.target.value);
+                  loadBinsForAgeGroup(e.target.value);
                   // Fetch bin when age group changes
                   if (e.target.value) {
                     fetchBinSuggestion(e.target.value, theme);
@@ -860,24 +914,29 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              <input
-                type="text"
-                value={bin}
-                onChange={(e) => setBin(e.target.value.toUpperCase())}
-                placeholder="e.g., A-12-3"
-                style={{
-                  width: '100%',
-                  padding: spacing.md,
-                  fontSize: typography.fontSize.lg,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.text,
-                  backgroundColor: colors.cream,
-                  border: `3px solid ${colors.border}`,
-                  borderRadius: radii.md,
-                  fontFamily: 'monospace',
-                  boxSizing: 'border-box',
-                }}
-              />
+              <select
+              value={bin}
+onChange={(e) => setBin(e.target.value)}
+style={{
+width: '100%',
+padding: spacing.md,
+fontSize: typography.fontSize.lg,
+fontWeight: typography.fontWeight.semibold,
+color: colors.text,
+backgroundColor: colors.cream,
+border: `3px solid ${colors.border}`,
+borderRadius: radii.md,
+fontFamily: typography.fontFamily.body,
+cursor: 'pointer',
+}}
+>
+<option value="">Select a bin...</option>
+{binOptions.map((b) => (
+<option key={b.bin_code} value={b.bin_code}>
+{(b.display_name || b.bin_code).toUpperCase()}
+</option>
+))}
+</select>
             </div>
           </div>
 
