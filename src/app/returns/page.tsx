@@ -11,7 +11,6 @@ interface BookCopyInfo {
   isbn: string;
   status: string;
   bin: string;
-  condition: string;
   ageGroup: string;
   title: string;
   author: string;
