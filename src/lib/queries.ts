@@ -1,6 +1,50 @@
 import { supabaseServer } from './supabaseServer';
 import type { OpsPickingQueueItem, OpsShippingQueueItem, Bundle, BundleItem, BundleStatus } from './types';
 
+type PickingQueueRpcRow = {
+  shipment_id: string;
+  order_number?: string | null;
+  member_name?: string | null;
+  tier?: string | null;
+  created_at: string;
+  age_group?: string | null;
+  books_to_pick?: number | null;
+  books_picked?: number | null;
+  pick_status?: string | null;
+};
+
+type ShippingQueueMember = { name?: string | null; tier?: string | null; email?: string | null };
+
+type ShippingQueueRow = {
+  id: string;
+  order_number?: string | null;
+  member_id?: string | null;
+  created_at: string;
+  members?: ShippingQueueMember | ShippingQueueMember[] | null;
+  shipment_books?: Array<{ id: string }> | null;
+};
+
+type ShipmentPickListRow = {
+  book_title_id: string;
+  book_to_find: string;
+  bin_id?: string | null;
+  bin_label?: string | null;
+  instruction?: string | null;
+  status?: string | null;
+  scanned_at?: string | null;
+};
+
+type ShipmentDetailsMember = { name?: string | null; tier?: string | null; age_group?: string | null };
+type ShipmentDetailsRow = {
+  id: string;
+  order_number?: string | null;
+  member_id?: string | null;
+  status: BundleStatus;
+  created_at: string;
+  updated_at: string;
+  members?: ShipmentDetailsMember | ShipmentDetailsMember[] | null;
+};
+
 // =====================================================
 // OPS DASHBOARD QUERIES - UPDATED FOR NEW SHIPMENTS SYSTEM
 // =====================================================
@@ -17,24 +61,29 @@ export async function getPickingQueue(): Promise<OpsPickingQueueItem[]> {
   }
 
   // Map the new structure to your existing OpsPickingQueueItem type
-  return (data || []).map((item: any) => ({
-    bundle_id: item.shipment_id,
-    order_number: item.order_number, // Add order number
-    member_id: '', // Add if needed
-    status: 'picking' as BundleStatus,
-    first_name: item.member_name.split(' ')[0] || item.member_name,
-    last_name: item.member_name.split(' ').slice(1).join(' ') || '',
-    email: '', // Add email to members table if needed
-    tier: item.tier,
-    ship_by: null,
-    created_at: item.created_at,
-    item_count: item.books_to_pick || 0,
-    // Additional fields from new system
-    age_group: item.age_group,
-    books_to_pick: item.books_to_pick,
-    books_picked: item.books_picked,
-    pick_status: item.pick_status,
-  }));
+  return ((data || []) as PickingQueueRpcRow[]).map((item) => {
+    const memberName = (item.member_name || '').trim();
+    const nameParts = memberName.split(' ').filter(Boolean);
+
+    return {
+      bundle_id: item.shipment_id,
+      order_number: item.order_number ?? undefined, // Add order number
+      member_id: '', // Add if needed
+      status: 'picking' as BundleStatus,
+      first_name: nameParts[0] || memberName || '',
+      last_name: nameParts.slice(1).join(' ') || '',
+      email: '', // Add email to members table if needed
+      tier: item.tier || '',
+      ship_by: null,
+      created_at: item.created_at,
+      item_count: item.books_to_pick || 0,
+      // Additional fields from new system
+      age_group: item.age_group || undefined,
+      books_to_pick: item.books_to_pick || 0,
+      books_picked: item.books_picked || 0,
+      pick_status: item.pick_status || undefined,
+    };
+  });
 }
 
 export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
@@ -54,7 +103,11 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
       members (
         name,
         tier,
-        age_group
+        age_group,
+        email
+      ),
+      shipment_books (
+        id
       )
     `)
     .eq('status', 'shipping')
@@ -65,20 +118,25 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
     throw error;
   }
 
-  return (data || []).map((item: any) => ({
-    bundle_id: item.id,
-    order_number: item.order_number, // Add order number
-    member_id: item.member_id,
-    status: 'shipping' as BundleStatus,
-    first_name: item.members?.name?.split(' ')[0] || '',
-    last_name: item.members?.name?.split(' ').slice(1).join(' ') || '',
-    email: '',
-    tier: item.members?.tier || '',
-    ship_by: null,
-    created_at: item.created_at,
-    tracking_number: null,
-    item_count: 0,
-  }));
+  return ((data || []) as ShippingQueueRow[]).map((item) => {
+    const member = Array.isArray(item.members) ? item.members[0] : item.members;
+    const memberName = (member?.name || '').trim();
+
+    return {
+      bundle_id: item.id,
+      order_number: item.order_number ?? undefined, // Add order number
+      member_id: item.member_id ?? undefined,
+      status: 'shipping' as BundleStatus,
+      first_name: memberName.split(' ')[0] || '',
+      last_name: memberName.split(' ').slice(1).join(' ') || '',
+      email: member?.email || '',
+      tier: member?.tier || '',
+      ship_by: null,
+      created_at: item.created_at,
+      tracking_number: null,
+      item_count: item.shipment_books?.length || 0,
+    };
+  });
 }
 
 export async function getBundleDetails(bundleId: string): Promise<{ bundle: Bundle, items: BundleItem[] }> {
@@ -106,35 +164,38 @@ export async function getBundleDetails(bundleId: string): Promise<{ bundle: Bund
 
   if (pickListError) throw pickListError;
 
+  const shipmentRow = shipment as ShipmentDetailsRow;
+  const shipmentMember = Array.isArray(shipmentRow.members) ? shipmentRow.members[0] : shipmentRow.members;
+
   // Map to old Bundle structure for UI compatibility
   const bundle: Bundle = {
-    id: shipment.id,
-    order_number: shipment.order_number, // Add order number
-    member_id: shipment.member_id,
-    status: shipment.status,
+    id: shipmentRow.id,
+    order_number: shipmentRow.order_number ?? undefined, // Add order number
+    member_id: shipmentRow.member_id || '',
+    status: shipmentRow.status,
     ship_by: null,
     tracking_number: null,
-    created_at: shipment.created_at,
-    updated_at: shipment.updated_at,
+    created_at: shipmentRow.created_at,
+    updated_at: shipmentRow.updated_at,
   };
 
   // Map pick list to BundleItem structure
-  const items: BundleItem[] = (pickList || []).map((item: any) => ({
+  const items: BundleItem[] = ((pickList || []) as ShipmentPickListRow[]).map((item) => ({
     id: item.book_title_id,
     bundle_id: bundleId,
     child_id: null,
     sku: '',
     title: item.book_to_find.replace('📖 Find: "', '').replace('📖 "', '').split('" by ')[0].replace('"', ''),
     author: item.book_to_find.split('" by ')[1] || '',
-    age_group: shipment.members?.age_group || '',
+    age_group: shipmentMember?.age_group || '',
     keep_status: 'active' as const,
     keep_price: 7.00,
     cover_image_url: null,
     tags: [],
     created_at: new Date().toISOString(),
-    bin_id: item.bin_id,
-    bin_label: item.bin_label,
-    instruction: item.instruction,
+    bin_id: item.bin_id ?? undefined,
+    bin_label: item.bin_label ?? undefined,
+    instruction: item.instruction ?? undefined,
     picked: item.status === '✅ PICKED',
     scanned_at: item.scanned_at,
   }));
@@ -177,7 +238,8 @@ export async function assignBooksToBundle(bundleId: string, bookCopies: { sku: s
   if (error) throw error;
 }
 
-export async function markBundleShipped(bundleId: string, trackingNumber: string): Promise<void> {
+export async function markBundleShipped(bundleId: string, _trackingNumber: string): Promise<void> {
+  void _trackingNumber;
   const supabase = supabaseServer();
   
   const { error } = await supabase
