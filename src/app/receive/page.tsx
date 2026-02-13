@@ -31,6 +31,15 @@ export default function ReceivePage() {
   const [bin, setBin] = useState('');
   const [theme, setTheme] = useState<string | null>(null);
 
+ const [binHelp, setBinHelp] = useState<{
+binCode: string;
+binTheme: string;
+bestFor: string[];
+message: string;
+} | null>(null);
+
+const [isLoadingBinHelp, setIsLoadingBinHelp] = useState(false); 
+
   // AI suggestion state
   const [ageSuggestion, setAgeSuggestion] = useState<{
     category: string;
@@ -101,6 +110,22 @@ const data = await res.json();
 setBinOptions(data.bins || []);
 } catch (err) {
 console.error('Failed to load bins:', err);
+}
+};
+
+const loadBinHelp = async (binCode: string) => {
+if (!binCode) return;
+setIsLoadingBinHelp(true);
+
+try {
+const res = await fetch(`/api/bin-help?binCode=${encodeURIComponent(binCode)}`);
+if (!res.ok) return;
+const data = await res.json();
+setBinHelp(data);
+} catch (err) {
+console.error('Failed to load bin help:', err);
+} finally {
+setIsLoadingBinHelp(false);
 }
 };
 
@@ -865,19 +890,46 @@ setIsSuggesting(false);
 
             {/* Bin Location */}
             <div style={{ marginBottom: 0 }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.textLight,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  marginBottom: spacing.sm,
-                }}
-              >
-                Bin Location
-              </label>
+              <div
+              style={{
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'space-between',
+marginBottom: spacing.sm,
+}}
+>
+<label
+style={{
+display: 'block',
+fontSize: typography.fontSize.sm,
+fontWeight: typography.fontWeight.bold,
+color: colors.textLight,
+textTransform: 'uppercase',
+letterSpacing: '0.05em',
+marginBottom: 0,
+}}
+>
+Bin Location
+</label>
+
+<button
+type="button"
+onClick={() => loadBinHelp(bin)}
+disabled={!bin || isLoadingBinHelp}
+style={{
+padding: `${spacing.xs} ${spacing.sm}`,
+borderRadius: radii.sm,
+border: `2px solid ${colors.border}`,
+backgroundColor: colors.surface,
+color: colors.textLight,
+cursor: !bin || isLoadingBinHelp ? 'not-allowed' : 'pointer',
+fontSize: typography.fontSize.xs,
+fontWeight: typography.fontWeight.bold,
+}}
+>
+{isLoadingBinHelp ? 'Loading…' : 'ℹ Bin Help'}
+</button>
+</div>
 
               {/* Bin Suggestion Loading */}
               {isFetchingBin && (
@@ -937,6 +989,38 @@ cursor: 'pointer',
 </option>
 ))}
 </select>
+
+{binHelp && binHelp.binCode === bin && (
+<div
+style={{
+marginTop: spacing.sm,
+padding: spacing.md,
+backgroundColor: colors.cream,
+border: `2px solid ${colors.border}`,
+borderRadius: radii.sm,
+}}
+>
+<div
+style={{
+fontSize: typography.fontSize.sm,
+fontWeight: typography.fontWeight.bold,
+color: colors.text,
+marginBottom: spacing.xs,
+}}
+>
+{binHelp.message}
+</div>
+
+<div
+style={{
+fontSize: typography.fontSize.xs,
+color: colors.textLight,
+}}
+>
+<strong>Tags:</strong> {binHelp.bestFor?.length ? binHelp.bestFor.join(', ') : 'No tags found'}
+</div>
+</div>
+)}
             </div>
           </div>
 
