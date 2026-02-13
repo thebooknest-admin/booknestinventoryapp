@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import { getInventory, updateBookCopy } from '@/app/actions/inventory';
 import { getQueueStats } from '@/app/actions/getQueueStats';
+import { Trash2 } from 'lucide-react';
 
 interface InventoryItem {
   id: string;
@@ -52,6 +53,12 @@ export default function Dashboard() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [filteredInventory, setFilteredInventory] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [modalBinOptions, setModalBinOptions] = useState<Array<{
+bin_code: string;
+display_name: string | null;
+age_group: string;
+}>>([]);
 
   // Edit modal state
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -197,6 +204,7 @@ export default function Dashboard() {
       status: item.status || '',
       coverUrl: item.coverUrl || '',
     });
+    loadModalBinsForAgeGroup(item.ageGroup || '');
     setIsEditing(true);
     setSaveError(null);
   };
@@ -229,18 +237,69 @@ export default function Dashboard() {
     }
   };
 
+  const handleQuickRetire = async (item: InventoryItem) => {
+const confirmed = window.confirm(`Retire ${item.sku}? You can still find it by status filter.`);
+if (!confirmed) return;
+
+const result = await updateBookCopy(item.id, { status: 'retired' });
+if (result.success) {
+await loadInventoryAndStats();
+} else {
+alert(result.error || 'Failed to retire item');
+}
+};
+
+useEffect(() => {
+if (!isEditing) return;
+
+const onKeyDown = (e: KeyboardEvent) => {
+  // Esc to close
+if (e.key === 'Escape') {
+e.preventDefault();
+handleCloseModal();
+return;
+}
+
+// Ctrl/Cmd + Enter to save
+if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+e.preventDefault();
+if (!isSaving) {
+handleSave();
+}
+}
+};
+window.addEventListener('keydown', onKeyDown);
+return () => window.removeEventListener('keydown', onKeyDown);
+}, [isEditing, isSaving, selectedItem, editForm]);
+
+const loadModalBinsForAgeGroup = async (selectedAgeGroup: string) => {
+if (!selectedAgeGroup) {
+setModalBinOptions([]);
+return;
+}
+
+try {
+const res = await fetch(`/api/bins?ageGroup=${encodeURIComponent(selectedAgeGroup)}`);
+if (!res.ok) return;
+const data = await res.json();
+setModalBinOptions(data.bins || []);
+} catch (err) {
+console.error('Failed to load modal bins:', err);
+}
+};
+
   return (
     <div
       style={{
         minHeight: '100vh',
-        padding: spacing.xl,
+        padding: spacing.lg,
         maxWidth: '1600px',
         margin: '0 auto',
       }}
     >
       <header
         style={{
-          marginBottom: spacing.xl,
+          marginBottom: spacing.lg,
           paddingBottom: spacing.lg,
           borderBottom: `3px solid ${colors.primary}`,
           display: 'flex',
@@ -304,8 +363,8 @@ export default function Dashboard() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: spacing.lg,
-          marginBottom: spacing['2xl'],
+          gap: spacing.md,
+          marginBottom: spacing['lg'],
         }}
       >
         <div
@@ -344,7 +403,7 @@ export default function Dashboard() {
             backgroundColor: colors.surface,
             border: `3px solid ${colors.mustardOchre}`,
             borderRadius: radii.md,
-            padding: spacing.lg,
+            padding: spacing.md,
           }}
         >
           <div
@@ -375,7 +434,7 @@ export default function Dashboard() {
             backgroundColor: colors.surface,
             border: `3px solid ${colors.sageMist}`,
             borderRadius: radii.md,
-            padding: spacing.lg,
+            padding: spacing.md,
           }}
         >
           <div
@@ -406,7 +465,7 @@ export default function Dashboard() {
             backgroundColor: colors.surface,
             border: `3px solid ${colors.lightCocoa}`,
             borderRadius: radii.md,
-            padding: spacing.lg,
+            padding: spacing.md,
           }}
         >
           <div
@@ -438,8 +497,8 @@ export default function Dashboard() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: spacing.lg,
-          marginBottom: spacing['2xl'],
+          gap: spacing.md,
+          marginBottom: spacing['lg'],
         }}
       >
         <Link
@@ -479,7 +538,7 @@ export default function Dashboard() {
             display: 'block',
             backgroundColor: colors.primary,
             color: colors.cream,
-            padding: spacing.xl,
+            padding: spacing.lg,
             borderRadius: radii.md,
             textDecoration: 'none',
             border: `3px solid ${colors.primary}`,
@@ -541,7 +600,7 @@ export default function Dashboard() {
             display: 'block',
             backgroundColor: colors.softBlush,
             color: colors.deepCocoa,
-            padding: spacing.xl,
+            padding: spacing.lg,
             borderRadius: radii.md,
             textDecoration: 'none',
             border: `3px solid ${colors.softBlush}`,
@@ -622,7 +681,7 @@ export default function Dashboard() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="SKU, title, author..."
+                placeholder="Scan SKU / ISBN or search title, author, bin..."
                 style={{
                   width: '100%',
                   padding: spacing.sm,
@@ -786,6 +845,9 @@ export default function Dashboard() {
                         letterSpacing: '0.05em',
                         cursor: 'pointer',
                         userSelect: 'none',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 2,
                       }}
                     >
                       SKU {sortBy === 'sku' && (sortOrder === 'asc' ? '↑' : '↓')}
@@ -896,6 +958,22 @@ export default function Dashboard() {
                     >
                       Received {sortBy === 'received' && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
+                   
+
+<th
+style={{
+  padding: spacing.md,
+textAlign: 'center',
+fontSize: typography.fontSize.sm,
+fontWeight: typography.fontWeight.bold,
+textTransform: 'uppercase',
+letterSpacing: '0.05em',
+whiteSpace: 'nowrap',
+}}
+>
+Actions
+</th>
+
                   </tr>
                 </thead>
                 <tbody>
@@ -1044,6 +1122,32 @@ export default function Dashboard() {
                       >
                         {item.receivedAt ? new Date(item.receivedAt).toLocaleDateString() : 'N/A'}
                       </td>
+                    
+<td
+style={{
+padding: spacing.md,
+textAlign: 'center',
+}}
+onClick={(e) => e.stopPropagation()}
+>
+<button
+onClick={() => handleQuickRetire(item)}
+title="Retire from active inventory"
+style={{
+display: 'inline-flex',
+alignItems: 'center',
+justifyContent: 'center',
+background: 'transparent',
+border: `2px solid ${colors.border}`,
+borderRadius: radii.sm,
+cursor: 'pointer',
+padding: spacing.xs,
+color: colors.textLight,
+}}
+>
+<Trash2 size={16} />
+</button>
+</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1054,27 +1158,44 @@ export default function Dashboard() {
 
         {/* Empty State */}
         {!isLoading && filteredInventory.length === 0 && (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: spacing['2xl'],
-              backgroundColor: colors.surface,
-              border: `2px solid ${colors.border}`,
-              borderRadius: radii.md,
-            }}
-          >
-            <p
-              style={{
-                fontSize: typography.fontSize.lg,
-                color: colors.textLight,
-                margin: 0,
-              }}
-            >
-              {inventory.length === 0
-                ? 'No inventory found. Start by receiving books!'
-                : 'No items match your filters.'}
-            </p>
-          </div>
+         <div
+style={{
+textAlign: 'center',
+padding: spacing['2xl'],
+backgroundColor: colors.surface,
+ border: `2px solid ${colors.border}`,
+borderRadius: radii.md,
+}}
+>
+<p
+style={{
+fontSize: typography.fontSize.lg,
+color: colors.textLight,
+margin: 0,
+marginBottom: spacing.md,
+}}
+>
+No inventory found yet.
+</p>
+<Link
+href="/receive"
+style={{
+display: 'inline-block',
+padding: `${spacing.sm} ${spacing.lg}`,
+backgroundColor: colors.primary,
+color: colors.cream,
+textDecoration: 'none',
+border: `2px solid ${colors.primary}`,
+borderRadius: radii.sm,
+fontSize: typography.fontSize.base,
+fontWeight: typography.fontWeight.bold,
+textTransform: 'uppercase',
+letterSpacing: '0.03em',
+}}
+>
+Receive Your First Books →
+</Link>
+</div>
         )}
       </div>
 
@@ -1171,7 +1292,13 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div style={{ marginBottom: spacing.xl }}>
+            <div style={{ 
+              marginBottom: spacing.xl,
+display: 'grid',
+gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+gap: spacing.lg,
+}}
+>
               {/* ISBN */}
               <div style={{ marginBottom: spacing.lg }}>
                 <label
@@ -1207,7 +1334,7 @@ export default function Dashboard() {
               </div>
 
               {/* Title */}
-              <div style={{ marginBottom: spacing.lg }}>
+              <div style={{ marginBottom: spacing.lg, gridColumn: '1 / -1' }}>
                 <label
                   style={{
                     display: 'block',
@@ -1275,7 +1402,7 @@ export default function Dashboard() {
               </div>
 
               {/* Cover URL */}
-              <div style={{ marginBottom: spacing.lg }}>
+              <div style={{ marginBottom: spacing.lg, gridColumn: '1 / -1' }}>
                 <label
                   style={{
                     display: 'block',
@@ -1343,7 +1470,11 @@ export default function Dashboard() {
                 </label>
                 <select
                   value={editForm.ageGroup}
-                  onChange={(e) => setEditForm({ ...editForm, ageGroup: e.target.value })}
+                  onChange={(e) => {
+const nextAge = e.target.value;
+setEditForm({ ...editForm, ageGroup: nextAge, bin: '' });
+loadModalBinsForAgeGroup(nextAge);
+}}
                   style={{
                     width: '100%',
                     padding: spacing.md,
@@ -1379,24 +1510,28 @@ export default function Dashboard() {
                 >
                   Bin Location
                 </label>
-                <input
-                  type="text"
-                  value={editForm.bin}
-                  onChange={(e) => setEditForm({ ...editForm, bin: e.target.value.toUpperCase() })}
-                  placeholder="e.g., A-12-3"
-                  style={{
-                    width: '100%',
-                    padding: spacing.md,
-                    fontSize: typography.fontSize.lg,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.text,
-                    backgroundColor: colors.cream,
-                    border: `2px solid ${colors.border}`,
-                    borderRadius: radii.md,
-                    fontFamily: 'monospace',
-                    boxSizing: 'border-box',
-                  }}
-                />
+                <select
+value={editForm.bin}
+onChange={(e) => setEditForm({ ...editForm, bin: e.target.value })}
+style={{
+width: '100%',
+padding: spacing.md,
+fontSize: typography.fontSize.base,
+color: colors.text,
+backgroundColor: colors.cream,
+border: `2px solid ${colors.border}`,
+borderRadius: radii.md,
+fontFamily: typography.fontFamily.body,
+cursor: 'pointer',
+}}
+>
+<option value="">Select a bin...</option>
+{modalBinOptions.map((b) => (
+<option key={b.bin_code} value={b.bin_code}>
+{(b.display_name || b.bin_code).toUpperCase()}
+</option>
+))}
+</select>
               </div>
 
               {/* Status */}
@@ -1444,12 +1579,51 @@ export default function Dashboard() {
 
             {/* Modal Actions */}
             <div
-              style={{
-                display: 'flex',
-                gap: spacing.md,
-                justifyContent: 'flex-end',
-              }}
-            >
+style={{
+position: 'sticky',
+bottom: 0,
+display: 'flex',
+gap: spacing.md,
+justifyContent: 'flex-end',
+backgroundColor: colors.surface,
+paddingTop: spacing.md,
+borderTop: `2px solid ${colors.border}`,
+marginTop: spacing.md,
+}}
+>
+            
+              <button
+onClick={async () => {
+if (!selectedItem) return;
+const confirmed = window.confirm(`Retire ${selectedItem.sku}?`);
+if (!confirmed) return;
+setIsSaving(true);
+const result = await updateBookCopy(selectedItem.id, { status: 'retired' });
+setIsSaving(false);
+
+if (result.success) {
+await loadInventoryAndStats();
+handleCloseModal();
+} else {
+setSaveError(result.error || 'Failed to retire book');
+}
+}}
+disabled={isSaving}
+style={{
+padding: `${spacing.md} ${spacing.lg}`,
+backgroundColor: colors.surface,
+color: colors.warning,
+border: `2px solid ${colors.warning}`,
+fontSize: typography.fontSize.base,
+fontWeight: typography.fontWeight.semibold,
+textTransform: 'uppercase',
+borderRadius: radii.md,
+cursor: isSaving ? 'not-allowed' : 'pointer',
+opacity: isSaving ? 0.6 : 1,
+}}
+>
+Retire
+</button>
               <button
                 onClick={handleCloseModal}
                 disabled={isSaving}
@@ -1469,6 +1643,8 @@ export default function Dashboard() {
                 Cancel
               </button>
 
+        
+
               <button
                 onClick={handleSave}
                 disabled={isSaving}
@@ -1487,10 +1663,18 @@ export default function Dashboard() {
                 {isSaving ? 'SAVING...' : 'SAVE CHANGES'}
               </button>
             </div>
+            <div
+style={{
+fontSize: typography.fontSize.xs,
+color: colors.textLight,
+marginTop: spacing.xs,
+textAlign: 'right',
+}}
+>Esc = Close • Ctrl/Cmd+Enter = Save
+</div>
           </div>
         </>
       )}
-
       {/* Enlarged Cover Modal */}
       {enlargedCover && (
         <>
