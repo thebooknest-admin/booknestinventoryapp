@@ -10,6 +10,11 @@ interface BookData {
   title: string;
   author: string;
   coverUrl: string | null;
+  description?: string | null;
+subjects?: string[];
+pageCount?: number | null;
+publishedDate?: string | null;
+maturityRating?: string | null;
 }
 
 const AGE_GROUP_LABELS: Record<string, string> = {
@@ -143,8 +148,8 @@ body: JSON.stringify({
 title: bookData.title,
 author: bookData.author,
 isbn: bookData.isbn,
-description: '',
-subjects: [],
+description: bookData.description || '',
+subjects: bookData.subjects || [],
 format: '',
 }),
 });

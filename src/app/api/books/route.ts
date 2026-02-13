@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 interface BookData {
-  isbn: string;
-  title: string;
-  author: string;
-  coverUrl: string | null;
+isbn: string;
+title: string;
+author: string;
+coverUrl: string | null;
+description?: string | null;
+subjects?: string[];
+pageCount?: number | null;
+publishedDate?: string | null;
+maturityRating?: string | null;
 }
 
 async function fetchFromOpenLibrary(isbn: string): Promise<BookData | null> {
@@ -41,12 +46,18 @@ async function fetchFromOpenLibrary(isbn: string): Promise<BookData | null> {
       }
     }
 
-    return {
-      isbn: cleanIsbn,
-      title,
-      author,
-      coverUrl,
-    };
+   return {
+isbn: cleanIsbn,
+title,
+author,
+coverUrl,
+description: data.description?.value || data.description || null,
+subjects: data.subjects || [],
+pageCount: data.number_of_pages || null,
+publishedDate: data.publish_date || null,
+maturityRating: null,
+};
+
   } catch (error) {
     console.error('Error fetching from Open Library:', error);
     return null;
@@ -84,11 +95,16 @@ async function fetchFromGoogleBooks(isbn: string): Promise<BookData | null> {
     }
 
     return {
-      isbn: cleanIsbn,
-      title: book.title || 'Unknown Title',
-      author: book.authors?.[0] || 'Unknown Author',
-      coverUrl,
-    };
+isbn: cleanIsbn,
+title: book.title || 'Unknown Title',
+author: book.authors?.[0] || 'Unknown Author',
+coverUrl,
+description: book.description || null,
+subjects: book.categories || [],
+pageCount: book.pageCount || null,
+publishedDate: book.publishedDate || null,
+maturityRating: book.maturityRating || null,
+};
   } catch (error) {
     console.error('Error fetching from Google Books:', error);
     return null;
