@@ -2,22 +2,21 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 
 type Context = {
-params: { batchID?: string; batchId?: string };
+params: Promise<{ batchID: string }>;
 };
 
-export async function POST(_req: Request, context: Context) {
+export async function POST(_req: Request, { params }: Context) {
 try {
-const batchId = context.params.batchID ?? context.params.batchId;
+const { batchID } = await params;
 
-if (!batchId) {
-return NextResponse.json({ error: 'batchId is required' }, { status: 400 });
+if (!batchID) {
+return NextResponse.json({ error: 'batchID is required' }, { status: 400 });
 }
 
 const supabase = supabaseServer();
 const { data, error } = await supabase.rpc('commit_intake_batch', {
-p_batch_id: batchId,
+p_batch_id: batchID,
 });
-
 if (error) {
 return NextResponse.json({ error: error.message }, { status: 500 });
 }
