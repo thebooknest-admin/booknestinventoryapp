@@ -7,11 +7,11 @@ import {
   suggestAgeTier,
 } from '@/lib/intakeBatch';
 
-type Params = { params: Promise<{ batchId: string }> };
+type Params = { params: Promise<{ batchID: string }> };
 
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    const { batchId } = await params;
+    const { batchID } = await params;
     const supabase = supabaseServer();
     const body = await request.json();
     const rawIsbn = String(body?.isbn || '');
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { data: batch, error: batchErr } = await supabase
       .from('intake_batches')
       .select('id, status')
-      .eq('id', batchId)
+      .eq('id', batchID)
       .maybeSingle();
 
     if (batchErr) return NextResponse.json({ error: batchErr.message }, { status: 500 });
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { data: dup, error: dupErr } = await supabase
       .from('intake_batch_items')
       .select('id')
-      .eq('batch_id', batchId)
+      .eq('batch_id', batchID)
       .eq('isbn', isbn)
       .maybeSingle();
 
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { data: inserted, error: insertErr } = await supabase
       .from('intake_batch_items')
       .insert({
-        batch_id: batchId,
+        batch_id: batchID,
         isbn,
         metadata: meta,
         suggested_age_tier: suggestedAge,

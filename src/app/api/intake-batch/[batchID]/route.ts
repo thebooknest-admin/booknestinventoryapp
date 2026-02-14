@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { normalizeIsbn } from '@/lib/intakeBatch';
 
-type Params = { params: Promise<{ batchId: string }> };
+type Params = { params: Promise<{ batchID: string }> };
 
 export async function GET(_: NextRequest, { params }: Params) {
   try {
-    const { batchId } = await params;
+    const { batchID } = await params;
     const supabase = supabaseServer();
 
     const { data: batch, error: batchErr } = await supabase
       .from('intake_batches')
       .select('*')
-      .eq('id', batchId)
+      .eq('id', batchID)
       .maybeSingle();
 
     if (batchErr) return NextResponse.json({ error: batchErr.message }, { status: 500 });
@@ -21,7 +21,7 @@ export async function GET(_: NextRequest, { params }: Params) {
     const { data: items, error: itemsErr } = await supabase
       .from('intake_batch_items')
       .select('*')
-      .eq('batch_id', batchId)
+      .eq('batch_id', batchID)
       .order('created_at', { ascending: true });
 
     if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 });
@@ -37,7 +37,7 @@ export async function GET(_: NextRequest, { params }: Params) {
 
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
-    const { batchId } = await params;
+    const { batchID } = await params;
     const body = await request.json();
     const itemId = String(body?.itemId || '');
 
@@ -55,7 +55,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       .from('intake_batch_items')
       .update(patch)
       .eq('id', itemId)
-      .eq('batch_id', batchId)
+      .eq('batch_id', batchID)
       .select('*')
       .single();
 
@@ -72,13 +72,13 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_: NextRequest, { params }: Params) {
   try {
-    const { batchId } = await params;
+    const { batchID } = await params;
     const supabase = supabaseServer();
 
     const { error } = await supabase
       .from('intake_batches')
       .update({ status: 'cancelled' })
-      .eq('id', batchId)
+      .eq('id', batchID)
       .eq('status', 'open');
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
