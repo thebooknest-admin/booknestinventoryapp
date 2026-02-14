@@ -610,23 +610,6 @@ export default function Dashboard() {
           >
             🏷️ Open Label Queue
           </Link>
-
-          <Link
-            href="/work/valuation"
-            style={{
-              display: 'inline-block',
-              padding: `${spacing.xs} ${spacing.md}`,
-              borderRadius: radii.sm,
-              border: `2px solid ${colors.border}`,
-              backgroundColor: colors.surface,
-              color: colors.text,
-              textDecoration: 'none',
-              fontSize: typography.fontSize.sm,
-              fontWeight: typography.fontWeight.semibold,
-            }}
-          >
-            💎 Open Value Intelligence
-          </Link>
         </div>
 
         {/* Filters */}
