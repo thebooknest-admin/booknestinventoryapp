@@ -1,24 +1,32 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 
-type Params = { params: Promise<{ batchId: string }> };
+type Context = {
+params: { batchID?: string; batchId?: string };
+};
 
-export async function POST(_: Request, { params }: Params) {
-  try {
-    const { batchId } = await params;
-    const supabase = supabaseServer();
+export async function POST(_req: Request, context: Context) {
+try {
+const batchId = context.params.batchID ?? context.params.batchId;
 
-    const { data, error } = await supabase.rpc('commit_intake_batch', {
-      p_batch_id: batchId,
-    });
+if (!batchId) {
+return NextResponse.json({ error: 'batchId is required' }, { status: 400 });
+}
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+const supabase = supabaseServer();
+const { data, error } = await supabase.rpc('commit_intake_batch', {
+p_batch_id: batchId,
+});
 
-    return NextResponse.json({ ok: true, summary: data });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
+if (error) {
+return NextResponse.json({ error: error.message }, { status: 500 });
+}
+
+return NextResponse.json({ ok: true, summary: data });
+} catch (error) {
+return NextResponse.json(
+{ error: error instanceof Error ? error.message : 'Unknown error' },
+{ status: 500 }
+);
+}
 }
