@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 
 type IntakeItem = {
@@ -35,6 +35,12 @@ type CommitSummary = {
   errors: Array<{ item_id: string; isbn: string; error: string }>;
 };
 
+type BinOption = {
+  bin_code: string;
+  display_name: string | null;
+  age_group: string | null;
+};
+
 const AGE_OPTIONS = ['HATCH', 'FLED', 'SOAR', 'SKY'];
 
 export default function BatchReceivePage() {
@@ -51,6 +57,7 @@ export default function BatchReceivePage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkAge, setBulkAge] = useState('');
   const [bulkBin, setBulkBin] = useState('');
+  const [bins, setBins] = useState<BinOption[]>([]);
 
   const count = items.length;
   const maxReached = count >= 20;
@@ -99,9 +106,21 @@ export default function BatchReceivePage() {
     }
   }
 
+  async function loadBins() {
+    try {
+      const res = await fetch('/api/bins', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load bins');
+      setBins((data?.bins || []) as BinOption[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load bins');
+    }
+  }
+
   useEffect(() => {
-    // Auto-pick up existing open batch on page load
+    // Auto-pick up existing open batch + bins on page load
     startBatch();
+    loadBins();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -297,12 +316,14 @@ export default function BatchReceivePage() {
             <option key={a} value={a}>{a}</option>
           ))}
         </select>
-        <input
-          value={bulkBin}
-          onChange={(e) => setBulkBin(e.target.value.toUpperCase())}
-          placeholder="Bin..."
-          style={inputSmall}
-        />
+        <select value={bulkBin} onChange={(e) => setBulkBin(e.target.value)} style={selectStyle}>
+          <option value="">Bin...</option>
+          {bins.map((b) => (
+            <option key={b.bin_code} value={b.bin_code}>
+              {b.bin_code}{b.display_name ? ` — ${b.display_name}` : ''}
+            </option>
+          ))}
+        </select>
         <button onClick={applyBulk} disabled={!selectedIds.length || busy} type="button" style={btn(colors.deepTeal, colors.cream)}>
           Apply
         </button>
@@ -357,12 +378,19 @@ export default function BatchReceivePage() {
                       </select>
                     </td>
                     <td style={td}>
-                      <input
+                      <select
                         value={row.final_bin || ''}
-                        onChange={(e) => patchItem(row.id, { final_bin: e.target.value.toUpperCase() })}
-                        style={inputSmall}
+                        onChange={(e) => patchItem(row.id, { final_bin: e.target.value })}
+                        style={selectStyle}
                         disabled={batchStatus !== 'open'}
-                      />
+                      >
+                        <option value="">Select bin...</option>
+                        {bins.map((b) => (
+                          <option key={b.bin_code} value={b.bin_code}>
+                            {b.bin_code}{b.display_name ? ` — ${b.display_name}` : ''}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td style={td}>
                       <input
@@ -463,19 +491,19 @@ function Badge({ text, bg }: { text: string; bg: string }) {
   );
 }
 
-const th: React.CSSProperties = {
+const th: CSSProperties = {
   padding: '10px',
   textAlign: 'left',
   fontSize: 12,
   textTransform: 'uppercase',
 };
 
-const td: React.CSSProperties = {
+const td: CSSProperties = {
   padding: '8px 10px',
   verticalAlign: 'top',
 };
 
-const inputSmall: React.CSSProperties = {
+const inputSmall: CSSProperties = {
   width: '100%',
   minWidth: 120,
   padding: '6px 8px',
@@ -484,7 +512,7 @@ const inputSmall: React.CSSProperties = {
   fontFamily: 'monospace',
 };
 
-const selectStyle: React.CSSProperties = {
+const selectStyle: CSSProperties = {
   width: '100%',
   minWidth: 130,
   padding: '6px 8px',
@@ -492,7 +520,7 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 6,
 };
 
-const btn = (bg: string, color: string): React.CSSProperties => ({
+const btn = (bg: string, color: string): CSSProperties => ({
   padding: '10px 12px',
   borderRadius: 8,
   border: `2px solid ${bg === colors.surface ? colors.border : bg}`,
@@ -502,7 +530,7 @@ const btn = (bg: string, color: string): React.CSSProperties => ({
   cursor: 'pointer',
 });
 
-const notice = (bg: string, color: string): React.CSSProperties => ({
+const notice = (bg: string, color: string): CSSProperties => ({
   background: bg,
   color,
   borderRadius: 8,
