@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import { getInventory, updateBookCopy } from '@/app/actions/inventory';
 import { getQueueStats } from '@/app/actions/getQueueStats';
-import { Trash2 } from 'lucide-react';
 
 interface InventoryItem {
   id: string;
@@ -53,12 +52,6 @@ export default function Dashboard() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [filteredInventory, setFilteredInventory] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [modalBinOptions, setModalBinOptions] = useState<Array<{
-bin_code: string;
-display_name: string | null;
-age_group: string;
-}>>([]);
 
   // Edit modal state
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -204,7 +197,6 @@ age_group: string;
       status: item.status || '',
       coverUrl: item.coverUrl || '',
     });
-    loadModalBinsForAgeGroup(item.ageGroup || '');
     setIsEditing(true);
     setSaveError(null);
   };
@@ -237,69 +229,18 @@ age_group: string;
     }
   };
 
-  const handleQuickRetire = async (item: InventoryItem) => {
-const confirmed = window.confirm(`Retire ${item.sku}? You can still find it by status filter.`);
-if (!confirmed) return;
-
-const result = await updateBookCopy(item.id, { status: 'retired' });
-if (result.success) {
-await loadInventoryAndStats();
-} else {
-alert(result.error || 'Failed to retire item');
-}
-};
-
-useEffect(() => {
-if (!isEditing) return;
-
-const onKeyDown = (e: KeyboardEvent) => {
-  // Esc to close
-if (e.key === 'Escape') {
-e.preventDefault();
-handleCloseModal();
-return;
-}
-
-// Ctrl/Cmd + Enter to save
-if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-e.preventDefault();
-if (!isSaving) {
-handleSave();
-}
-}
-};
-window.addEventListener('keydown', onKeyDown);
-return () => window.removeEventListener('keydown', onKeyDown);
-}, [isEditing, isSaving, selectedItem, editForm]);
-
-const loadModalBinsForAgeGroup = async (selectedAgeGroup: string) => {
-if (!selectedAgeGroup) {
-setModalBinOptions([]);
-return;
-}
-
-try {
-const res = await fetch(`/api/bins?ageGroup=${encodeURIComponent(selectedAgeGroup)}`);
-if (!res.ok) return;
-const data = await res.json();
-setModalBinOptions(data.bins || []);
-} catch (err) {
-console.error('Failed to load modal bins:', err);
-}
-};
-
   return (
     <div
       style={{
         minHeight: '100vh',
-        padding: spacing.lg,
+        padding: spacing.xl,
         maxWidth: '1600px',
         margin: '0 auto',
       }}
     >
       <header
         style={{
-          marginBottom: spacing.lg,
+          marginBottom: spacing.xl,
           paddingBottom: spacing.lg,
           borderBottom: `3px solid ${colors.primary}`,
           display: 'flex',
@@ -363,8 +304,8 @@ console.error('Failed to load modal bins:', err);
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: spacing.md,
-          marginBottom: spacing['lg'],
+          gap: spacing.lg,
+          marginBottom: spacing['2xl'],
         }}
       >
         <div
@@ -403,7 +344,7 @@ console.error('Failed to load modal bins:', err);
             backgroundColor: colors.surface,
             border: `3px solid ${colors.mustardOchre}`,
             borderRadius: radii.md,
-            padding: spacing.md,
+            padding: spacing.lg,
           }}
         >
           <div
@@ -434,7 +375,7 @@ console.error('Failed to load modal bins:', err);
             backgroundColor: colors.surface,
             border: `3px solid ${colors.sageMist}`,
             borderRadius: radii.md,
-            padding: spacing.md,
+            padding: spacing.lg,
           }}
         >
           <div
@@ -465,7 +406,7 @@ console.error('Failed to load modal bins:', err);
             backgroundColor: colors.surface,
             border: `3px solid ${colors.lightCocoa}`,
             borderRadius: radii.md,
-            padding: spacing.md,
+            padding: spacing.lg,
           }}
         >
           <div
@@ -497,8 +438,8 @@ console.error('Failed to load modal bins:', err);
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: spacing.md,
-          marginBottom: spacing['lg'],
+          gap: spacing.lg,
+          marginBottom: spacing['2xl'],
         }}
       >
         <Link
@@ -538,7 +479,7 @@ console.error('Failed to load modal bins:', err);
             display: 'block',
             backgroundColor: colors.primary,
             color: colors.cream,
-            padding: spacing.lg,
+            padding: spacing.xl,
             borderRadius: radii.md,
             textDecoration: 'none',
             border: `3px solid ${colors.primary}`,
@@ -600,7 +541,7 @@ console.error('Failed to load modal bins:', err);
             display: 'block',
             backgroundColor: colors.softBlush,
             color: colors.deepCocoa,
-            padding: spacing.lg,
+            padding: spacing.xl,
             borderRadius: radii.md,
             textDecoration: 'none',
             border: `3px solid ${colors.softBlush}`,
@@ -644,6 +585,50 @@ console.error('Failed to load modal bins:', err);
           Inventory ({filteredInventory.length} items)
         </h2>
 
+        <div
+          style={{
+            display: 'flex',
+            gap: spacing.md,
+            alignItems: 'center',
+            marginBottom: spacing.md,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            href="/work/labels"
+            style={{
+              display: 'inline-block',
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: radii.sm,
+              border: `2px solid ${colors.border}`,
+              backgroundColor: colors.surface,
+              color: colors.text,
+              textDecoration: 'none',
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+            }}
+          >
+            🏷️ Open Label Queue
+          </Link>
+
+          <Link
+            href="/work/valuation"
+            style={{
+              display: 'inline-block',
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: radii.sm,
+              border: `2px solid ${colors.border}`,
+              backgroundColor: colors.surface,
+              color: colors.text,
+              textDecoration: 'none',
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+            }}
+          >
+            💎 Open Value Intelligence
+          </Link>
+        </div>
+
         {/* Filters */}
         <div
           style={{
@@ -681,7 +666,7 @@ console.error('Failed to load modal bins:', err);
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Scan SKU / ISBN or search title, author, bin..."
+                placeholder="SKU, title, author..."
                 style={{
                   width: '100%',
                   padding: spacing.sm,
@@ -845,9 +830,6 @@ console.error('Failed to load modal bins:', err);
                         letterSpacing: '0.05em',
                         cursor: 'pointer',
                         userSelect: 'none',
-                        position: 'sticky',
-                        top: 0,
-                        zIndex: 2,
                       }}
                     >
                       SKU {sortBy === 'sku' && (sortOrder === 'asc' ? '↑' : '↓')}
@@ -958,22 +940,6 @@ console.error('Failed to load modal bins:', err);
                     >
                       Received {sortBy === 'received' && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
-                   
-
-<th
-style={{
-  padding: spacing.md,
-textAlign: 'center',
-fontSize: typography.fontSize.sm,
-fontWeight: typography.fontWeight.bold,
-textTransform: 'uppercase',
-letterSpacing: '0.05em',
-whiteSpace: 'nowrap',
-}}
->
-Actions
-</th>
-
                   </tr>
                 </thead>
                 <tbody>
@@ -1122,32 +1088,6 @@ Actions
                       >
                         {item.receivedAt ? new Date(item.receivedAt).toLocaleDateString() : 'N/A'}
                       </td>
-                    
-<td
-style={{
-padding: spacing.md,
-textAlign: 'center',
-}}
-onClick={(e) => e.stopPropagation()}
->
-<button
-onClick={() => handleQuickRetire(item)}
-title="Retire from active inventory"
-style={{
-display: 'inline-flex',
-alignItems: 'center',
-justifyContent: 'center',
-background: 'transparent',
-border: `2px solid ${colors.border}`,
-borderRadius: radii.sm,
-cursor: 'pointer',
-padding: spacing.xs,
-color: colors.textLight,
-}}
->
-<Trash2 size={16} />
-</button>
-</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1158,44 +1098,27 @@ color: colors.textLight,
 
         {/* Empty State */}
         {!isLoading && filteredInventory.length === 0 && (
-         <div
-style={{
-textAlign: 'center',
-padding: spacing['2xl'],
-backgroundColor: colors.surface,
- border: `2px solid ${colors.border}`,
-borderRadius: radii.md,
-}}
->
-<p
-style={{
-fontSize: typography.fontSize.lg,
-color: colors.textLight,
-margin: 0,
-marginBottom: spacing.md,
-}}
->
-No inventory found yet.
-</p>
-<Link
-href="/receive"
-style={{
-display: 'inline-block',
-padding: `${spacing.sm} ${spacing.lg}`,
-backgroundColor: colors.primary,
-color: colors.cream,
-textDecoration: 'none',
-border: `2px solid ${colors.primary}`,
-borderRadius: radii.sm,
-fontSize: typography.fontSize.base,
-fontWeight: typography.fontWeight.bold,
-textTransform: 'uppercase',
-letterSpacing: '0.03em',
-}}
->
-Receive Your First Books →
-</Link>
-</div>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: spacing['2xl'],
+              backgroundColor: colors.surface,
+              border: `2px solid ${colors.border}`,
+              borderRadius: radii.md,
+            }}
+          >
+            <p
+              style={{
+                fontSize: typography.fontSize.lg,
+                color: colors.textLight,
+                margin: 0,
+              }}
+            >
+              {inventory.length === 0
+                ? 'No inventory found. Start by receiving books!'
+                : 'No items match your filters.'}
+            </p>
+          </div>
         )}
       </div>
 
@@ -1292,13 +1215,7 @@ Receive Your First Books →
               </div>
             )}
 
-            <div style={{ 
-              marginBottom: spacing.xl,
-display: 'grid',
-gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-gap: spacing.lg,
-}}
->
+            <div style={{ marginBottom: spacing.xl }}>
               {/* ISBN */}
               <div style={{ marginBottom: spacing.lg }}>
                 <label
@@ -1334,7 +1251,7 @@ gap: spacing.lg,
               </div>
 
               {/* Title */}
-              <div style={{ marginBottom: spacing.lg, gridColumn: '1 / -1' }}>
+              <div style={{ marginBottom: spacing.lg }}>
                 <label
                   style={{
                     display: 'block',
@@ -1402,7 +1319,7 @@ gap: spacing.lg,
               </div>
 
               {/* Cover URL */}
-              <div style={{ marginBottom: spacing.lg, gridColumn: '1 / -1' }}>
+              <div style={{ marginBottom: spacing.lg }}>
                 <label
                   style={{
                     display: 'block',
@@ -1470,11 +1387,7 @@ gap: spacing.lg,
                 </label>
                 <select
                   value={editForm.ageGroup}
-                  onChange={(e) => {
-const nextAge = e.target.value;
-setEditForm({ ...editForm, ageGroup: nextAge, bin: '' });
-loadModalBinsForAgeGroup(nextAge);
-}}
+                  onChange={(e) => setEditForm({ ...editForm, ageGroup: e.target.value })}
                   style={{
                     width: '100%',
                     padding: spacing.md,
@@ -1510,28 +1423,24 @@ loadModalBinsForAgeGroup(nextAge);
                 >
                   Bin Location
                 </label>
-                <select
-value={editForm.bin}
-onChange={(e) => setEditForm({ ...editForm, bin: e.target.value })}
-style={{
-width: '100%',
-padding: spacing.md,
-fontSize: typography.fontSize.base,
-color: colors.text,
-backgroundColor: colors.cream,
-border: `2px solid ${colors.border}`,
-borderRadius: radii.md,
-fontFamily: typography.fontFamily.body,
-cursor: 'pointer',
-}}
->
-<option value="">Select a bin...</option>
-{modalBinOptions.map((b) => (
-<option key={b.bin_code} value={b.bin_code}>
-{(b.display_name || b.bin_code).toUpperCase()}
-</option>
-))}
-</select>
+                <input
+                  type="text"
+                  value={editForm.bin}
+                  onChange={(e) => setEditForm({ ...editForm, bin: e.target.value.toUpperCase() })}
+                  placeholder="e.g., A-12-3"
+                  style={{
+                    width: '100%',
+                    padding: spacing.md,
+                    fontSize: typography.fontSize.lg,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.text,
+                    backgroundColor: colors.cream,
+                    border: `2px solid ${colors.border}`,
+                    borderRadius: radii.md,
+                    fontFamily: 'monospace',
+                    boxSizing: 'border-box',
+                  }}
+                />
               </div>
 
               {/* Status */}
@@ -1579,51 +1488,12 @@ cursor: 'pointer',
 
             {/* Modal Actions */}
             <div
-style={{
-position: 'sticky',
-bottom: 0,
-display: 'flex',
-gap: spacing.md,
-justifyContent: 'flex-end',
-backgroundColor: colors.surface,
-paddingTop: spacing.md,
-borderTop: `2px solid ${colors.border}`,
-marginTop: spacing.md,
-}}
->
-            
-              <button
-onClick={async () => {
-if (!selectedItem) return;
-const confirmed = window.confirm(`Retire ${selectedItem.sku}?`);
-if (!confirmed) return;
-setIsSaving(true);
-const result = await updateBookCopy(selectedItem.id, { status: 'retired' });
-setIsSaving(false);
-
-if (result.success) {
-await loadInventoryAndStats();
-handleCloseModal();
-} else {
-setSaveError(result.error || 'Failed to retire book');
-}
-}}
-disabled={isSaving}
-style={{
-padding: `${spacing.md} ${spacing.lg}`,
-backgroundColor: colors.surface,
-color: colors.warning,
-border: `2px solid ${colors.warning}`,
-fontSize: typography.fontSize.base,
-fontWeight: typography.fontWeight.semibold,
-textTransform: 'uppercase',
-borderRadius: radii.md,
-cursor: isSaving ? 'not-allowed' : 'pointer',
-opacity: isSaving ? 0.6 : 1,
-}}
->
-Retire
-</button>
+              style={{
+                display: 'flex',
+                gap: spacing.md,
+                justifyContent: 'flex-end',
+              }}
+            >
               <button
                 onClick={handleCloseModal}
                 disabled={isSaving}
@@ -1643,8 +1513,6 @@ Retire
                 Cancel
               </button>
 
-        
-
               <button
                 onClick={handleSave}
                 disabled={isSaving}
@@ -1663,18 +1531,10 @@ Retire
                 {isSaving ? 'SAVING...' : 'SAVE CHANGES'}
               </button>
             </div>
-            <div
-style={{
-fontSize: typography.fontSize.xs,
-color: colors.textLight,
-marginTop: spacing.xs,
-textAlign: 'right',
-}}
->Esc = Close • Ctrl/Cmd+Enter = Save
-</div>
           </div>
         </>
       )}
+
       {/* Enlarged Cover Modal */}
       {enlargedCover && (
         <>
