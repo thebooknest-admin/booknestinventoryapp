@@ -10,11 +10,6 @@ interface BookData {
   title: string;
   author: string;
   coverUrl: string | null;
-  description?: string | null;
-subjects?: string[];
-pageCount?: number | null;
-publishedDate?: string | null;
-maturityRating?: string | null;
 }
 
 const AGE_GROUP_LABELS: Record<string, string> = {
@@ -36,15 +31,6 @@ export default function ReceivePage() {
   const [bin, setBin] = useState('');
   const [theme, setTheme] = useState<string | null>(null);
 
- const [binHelp, setBinHelp] = useState<{
-binCode: string;
-binTheme: string;
-bestFor: string[];
-message: string;
-} | null>(null);
-
-const [isLoadingBinHelp, setIsLoadingBinHelp] = useState(false); 
-
   // AI suggestion state
   const [ageSuggestion, setAgeSuggestion] = useState<{
     category: string;
@@ -55,13 +41,6 @@ const [isLoadingBinHelp, setIsLoadingBinHelp] = useState(false);
     explanation: string;
   } | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
-
-  const [binOptions, setBinOptions] = useState<Array<{
-bin_code: string;
-display_name: string | null;
-age_group: string;
-theme: string | null;
-}>>([]);
 
   // Bin suggestion state
   const [binSuggestion, setBinSuggestion] = useState<string | null>(null);
@@ -93,7 +72,7 @@ theme: string | null;
         const data = await response.json();
         if (data.suggestedBin) {
           setBinSuggestion(data.suggestedBin);
-          setBin(data.suggestedBinCode || data.suggestedBin || '');
+          setBin(data.suggestedBin);
         }
       }
     } catch (err) {
@@ -103,114 +82,52 @@ theme: string | null;
     }
   };
 
-const loadBinsForAgeGroup = async (selectedAgeGroup: string) => {
-if (!selectedAgeGroup) {
-setBinOptions([]);
-return;
-}
-try {
-const res = await fetch(`/api/bins?ageGroup=${encodeURIComponent(selectedAgeGroup)}`);
-if (!res.ok) return;
-const data = await res.json();
-setBinOptions(data.bins || []);
-} catch (err) {
-console.error('Failed to load bins:', err);
-}
-};
-
-const loadBinHelp = async (binCode: string) => {
-if (!binCode) return;
-setIsLoadingBinHelp(true);
-
-try {
-const res = await fetch(`/api/bin-help?binCode=${encodeURIComponent(binCode)}`);
-if (!res.ok) return;
-const data = await res.json();
-setBinHelp(data);
-} catch (err) {
-console.error('Failed to load bin help:', err);
-} finally {
-setIsLoadingBinHelp(false);
-}
-};
-
   const fetchAgeAndThemeSuggestion = async (bookData: BookData) => {
-setIsSuggesting(true);
-setAgeSuggestion(null);
-setThemeSuggestion(null);
-setBinSuggestion(null);
+    setIsSuggesting(true);
+    setAgeSuggestion(null);
+    setThemeSuggestion(null);
 
-try {
-const response = await fetch('/api/suggest-classification', {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
-title: bookData.title,
-author: bookData.author,
-isbn: bookData.isbn,
-description: bookData.description || '',
-subjects: bookData.subjects || [],
-format: '',
-}),
-});
+    try {
+      const response = await fetch('/api/suggest-age-theme', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: bookData.title,
+          author: bookData.author,
+          isbn: bookData.isbn,
+        }),
+      });
 
-if (!response.ok) {
-throw new Error('Failed to get classification suggestion');
-}
-const data = await response.json();
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ageGroup) {
+          setAgeSuggestion({
+            category: data.ageGroup,
+            explanation: data.ageExplanation,
+          });
+          setAgeGroup(data.ageGroup);
+        }
+        if (data.theme) {
+          setThemeSuggestion({
+            theme: data.theme,
+            explanation: data.themeExplanation,
+          });
+          setTheme(data.theme);
 
-const tierToAgeGroup: Record<string, string> = {
-HATCH: 'hatchlings',
-FLED: 'fledglings',
-SOAR: 'soarers',
-SKY: 'sky_readers',
-};
-
-const tierToPrefix: Record<string, string> = {
-HATCH: 'HATCH',
-FLED: 'FLED',
-SOAR: 'SOAR',
-SKY: 'SKY',
-};
-// Age suggestion
-if (data.suggested_age_tier) {
-const mappedAgeGroup = tierToAgeGroup[data.suggested_age_tier];
-if (mappedAgeGroup) {
-setAgeGroup(mappedAgeGroup);
-setAgeSuggestion({
-category: mappedAgeGroup,
-explanation: `${data.reason || 'Suggested by rules engine'} (confidence: ${Math.round((data.confidence || 0) * 100)}%)`,
-});
-
-// Load bins for that age group
-await loadBinsForAgeGroup(mappedAgeGroup);
-}
-}
-// Bin/theme suggestion
-if (data.suggested_bin) {
-const binName = String(data.suggested_bin).toUpperCase();
-setTheme(binName.toLowerCase());
-setThemeSuggestion({
-theme: binName.toLowerCase(),
-explanation: `${data.reason || 'Suggested by rules engine'} (confidence: ${Math.round((data.confidence || 0) * 100)}%)`,
-});
-
-// Auto-pick canonical -01 bin (e.g., SOAR-ADVENTURE-01)
-if (data.suggested_age_tier) {
-const prefix = tierToPrefix[data.suggested_age_tier];
-if (prefix) {
-const autoBin = `${prefix}-${binName}-01`;
-setBin(autoBin);
-setBinSuggestion(autoBin);
-}
-}
-}
-} catch (err) {
-console.error('Failed to get suggestions:', err);
-} finally {
-setIsSuggesting(false);
-}
-};
+          // Now fetch bin suggestion with both age and theme
+          if (data.ageGroup) {
+            fetchBinSuggestion(data.ageGroup, data.theme);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to get suggestions:', err);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
 
   const handleIsbnScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -380,6 +297,24 @@ setIsSuggesting(false);
         >
           Receive Books
         </h1>
+        <div style={{ marginTop: spacing.sm }}>
+          <Link
+            href="/receive/batch"
+            style={{
+              display: 'inline-block',
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: radii.sm,
+              border: `2px solid ${colors.border}`,
+              backgroundColor: colors.surface,
+              color: colors.text,
+              textDecoration: 'none',
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+            }}
+          >
+            ⚡ Batch Receive Mode (up to 20)
+          </Link>
+        </div>
       </header>
 
       {/* Success Message */}
@@ -865,7 +800,6 @@ setIsSuggesting(false);
                 value={ageGroup}
                 onChange={(e) => {
                   setAgeGroup(e.target.value);
-                  loadBinsForAgeGroup(e.target.value);
                   // Fetch bin when age group changes
                   if (e.target.value) {
                     fetchBinSuggestion(e.target.value, theme);
@@ -895,46 +829,19 @@ setIsSuggesting(false);
 
             {/* Bin Location */}
             <div style={{ marginBottom: 0 }}>
-              <div
-              style={{
-display: 'flex',
-alignItems: 'center',
-justifyContent: 'space-between',
-marginBottom: spacing.sm,
-}}
->
-<label
-style={{
-display: 'block',
-fontSize: typography.fontSize.sm,
-fontWeight: typography.fontWeight.bold,
-color: colors.textLight,
-textTransform: 'uppercase',
-letterSpacing: '0.05em',
-marginBottom: 0,
-}}
->
-Bin Location
-</label>
-
-<button
-type="button"
-onClick={() => loadBinHelp(bin)}
-disabled={!bin || isLoadingBinHelp}
-style={{
-padding: `${spacing.xs} ${spacing.sm}`,
-borderRadius: radii.sm,
-border: `2px solid ${colors.border}`,
-backgroundColor: colors.surface,
-color: colors.textLight,
-cursor: !bin || isLoadingBinHelp ? 'not-allowed' : 'pointer',
-fontSize: typography.fontSize.xs,
-fontWeight: typography.fontWeight.bold,
-}}
->
-{isLoadingBinHelp ? 'Loading…' : 'ℹ Bin Help'}
-</button>
-</div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.bold,
+                  color: colors.textLight,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: spacing.sm,
+                }}
+              >
+                Bin Location
+              </label>
 
               {/* Bin Suggestion Loading */}
               {isFetchingBin && (
@@ -971,61 +878,24 @@ fontWeight: typography.fontWeight.bold,
                 </div>
               )}
 
-              <select
-              value={bin}
-onChange={(e) => setBin(e.target.value)}
-style={{
-width: '100%',
-padding: spacing.md,
-fontSize: typography.fontSize.lg,
-fontWeight: typography.fontWeight.semibold,
-color: colors.text,
-backgroundColor: colors.cream,
-border: `3px solid ${colors.border}`,
-borderRadius: radii.md,
-fontFamily: typography.fontFamily.body,
-cursor: 'pointer',
-}}
->
-<option value="">Select a bin...</option>
-{binOptions.map((b) => (
-<option key={b.bin_code} value={b.bin_code}>
-{(b.display_name || b.bin_code).toUpperCase()}
-</option>
-))}
-</select>
-
-{binHelp && binHelp.binCode === bin && (
-<div
-style={{
-marginTop: spacing.sm,
-padding: spacing.md,
-backgroundColor: colors.cream,
-border: `2px solid ${colors.border}`,
-borderRadius: radii.sm,
-}}
->
-<div
-style={{
-fontSize: typography.fontSize.sm,
-fontWeight: typography.fontWeight.bold,
-color: colors.text,
-marginBottom: spacing.xs,
-}}
->
-{binHelp.message}
-</div>
-
-<div
-style={{
-fontSize: typography.fontSize.xs,
-color: colors.textLight,
-}}
->
-<strong>Tags:</strong> {binHelp.bestFor?.length ? binHelp.bestFor.join(', ') : 'No tags found'}
-</div>
-</div>
-)}
+              <input
+                type="text"
+                value={bin}
+                onChange={(e) => setBin(e.target.value.toUpperCase())}
+                placeholder="e.g., A-12-3"
+                style={{
+                  width: '100%',
+                  padding: spacing.md,
+                  fontSize: typography.fontSize.lg,
+                  fontWeight: typography.fontWeight.bold,
+                  color: colors.text,
+                  backgroundColor: colors.cream,
+                  border: `3px solid ${colors.border}`,
+                  borderRadius: radii.md,
+                  fontFamily: 'monospace',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
           </div>
 
