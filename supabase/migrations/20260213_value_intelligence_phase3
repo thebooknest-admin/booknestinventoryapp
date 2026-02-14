@@ -1,0 +1,172 @@
+-- Phase 3: Operational Views for Value Intelligence
+
+begin;
+
+-- =====================================================
+-- Helper CTE pattern reused in views (materialized as view logic)
+-- =====================================================
+
+-- 1) Resale Queue: resale_candidate + resale_priority
+create or replace view public.v_resale_queue as
+with copy_stats as (
+  select
+    bc.book_title_id,
+    count(*) filter (where bc.status in ('in_house','returned'))::int as available_copies,
+    count(*)::int as total_copies
+  from public.book_copies bc
+  group by bc.book_title_id
+),
+primary_bin as (
+  select distinct on (bc.book_title_id)
+    bc.book_title_id,
+    bc.bin_id as primary_bin,
+    count(*) over (partition by bc.book_title_id, bc.bin_id)::int as primary_bin_count
+  from public.book_copies bc
+  where bc.status in ('in_house','returned')
+    and bc.bin_id is not null
+  order by bc.book_title_id, count(*) over (partition by bc.book_title_id, bc.bin_id) desc, bc.bin_id
+)
+select
+  bt.id as book_title_id,
+  bt.title,
+  bt.author,
+  bt.isbn,
+  bt.estimated_market_value,
+  bt.value_band,
+  bt.value_source,
+  bt.value_last_checked_at,
+  bt.high_value_flag,
+  bt.premium_flag,
+  bt.stale_value_flag,
+  bt.resale_candidate,
+  bt.disposition_recommendation,
+  coalesce(cs.available_copies, 0) as available_copies,
+  coalesce(cs.total_copies, 0) as total_copies,
+  pb.primary_bin,
+  pb.primary_bin_count
+from public.book_titles bt
+left join copy_stats cs on cs.book_title_id = bt.id
+left join primary_bin pb on pb.book_title_id = bt.id
+where bt.disposition_recommendation in ('resale_candidate', 'resale_priority')
+order by
+  case bt.disposition_recommendation
+    when 'resale_priority' then 1
+    when 'resale_candidate' then 2
+    else 3
+  end,
+  bt.estimated_market_value desc nulls last,
+  bt.title asc;
+
+-- 2) Premium Verify Now
+create or replace view public.v_premium_verify_now as
+with copy_stats as (
+  select
+    bc.book_title_id,
+    count(*) filter (where bc.status in ('in_house','returned'))::int as available_copies
+  from public.book_copies bc
+  group by bc.book_title_id
+)
+select
+  bt.id as book_title_id,
+  bt.title,
+  bt.author,
+  bt.isbn,
+  bt.estimated_market_value,
+  bt.value_source,
+  bt.value_last_checked_at,
+  bt.value_band,
+  bt.premium_flag,
+  bt.disposition_recommendation,
+  bt.stale_value_flag,
+  coalesce(cs.available_copies, 0) as available_copies
+from public.book_titles bt
+left join copy_stats cs on cs.book_title_id = bt.id
+where bt.premium_flag = true
+order by bt.estimated_market_value desc nulls last, bt.title asc;
+
+-- 3) Stale Valuations
+create or replace view public.v_stale_valuations as
+with active_settings as (
+  select stale_days
+  from public.valuation_settings
+  where active = true
+  order by created_at desc
+  limit 1
+),
+copy_stats as (
+  select
+    bc.book_title_id,
+    count(*) filter (where bc.status in ('in_house','returned'))::int as available_copies
+  from public.book_copies bc
+  group by bc.book_title_id
+)
+select
+  bt.id as book_title_id,
+  bt.title,
+  bt.author,
+  bt.isbn,
+  bt.estimated_market_value,
+  bt.value_source,
+  bt.value_last_checked_at,
+  bt.value_band,
+  bt.disposition_recommendation,
+  bt.stale_value_flag,
+  (bt.value_last_checked_at is null
+    or bt.value_last_checked_at < now() - make_interval(days => coalesce((select stale_days from active_settings), 30))) as stale_by_date_rule,
+  coalesce(cs.available_copies, 0) as available_copies
+from public.book_titles bt
+left join copy_stats cs on cs.book_title_id = bt.id
+where bt.stale_value_flag = true
+   or bt.value_last_checked_at is null
+   or bt.value_last_checked_at < now() - make_interval(days => coalesce((select stale_days from active_settings), 30))
+order by bt.value_last_checked_at asc nulls first, bt.title asc;
+
+-- 4) At-Risk Bins (near/below floor)
+create or replace view public.v_at_risk_bins as
+with active_copy_counts as (
+  select
+    bc.bin_id as bin_code,
+    count(*) filter (where bc.status in ('in_house','returned'))::int as active_copy_count
+  from public.book_copies bc
+  where bc.bin_id is not null
+  group by bc.bin_id
+),
+active_floor as (
+  select
+    f.bin_code,
+    f.min_bin_floor
+  from public.bin_floor_config f
+  where f.active = true
+)
+select
+  b.bin_code,
+  b.display_name,
+  b.age_group,
+  b.theme,
+  coalesce(acc.active_copy_count, 0) as active_copy_count,
+  coalesce(af.min_bin_floor, 0) as min_bin_floor,
+  (coalesce(acc.active_copy_count, 0) - coalesce(af.min_bin_floor, 0)) as delta_to_floor,
+  case
+    when coalesce(acc.active_copy_count, 0) < coalesce(af.min_bin_floor, 0) then 'below_floor'
+    when coalesce(acc.active_copy_count, 0) = coalesce(af.min_bin_floor, 0) then 'at_floor'
+    when coalesce(acc.active_copy_count, 0) = coalesce(af.min_bin_floor, 0) + 1 then 'near_floor'
+    else 'healthy'
+  end as floor_status
+from public.bins b
+left join active_copy_counts acc on acc.bin_code = b.bin_code
+left join active_floor af on af.bin_code = b.bin_code
+where b.is_active = true
+  and (
+    coalesce(acc.active_copy_count, 0) <= coalesce(af.min_bin_floor, 0) + 1
+  )
+order by
+  case
+    when coalesce(acc.active_copy_count, 0) < coalesce(af.min_bin_floor, 0) then 1
+    when coalesce(acc.active_copy_count, 0) = coalesce(af.min_bin_floor, 0) then 2
+    else 3
+  end,
+  b.age_group,
+  b.bin_code;
+
+commit;
+

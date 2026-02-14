@@ -1,0 +1,101 @@
+-- Phase 4: eBay ISBN comps ingestion + valuation enrichment
+
+begin;
+
+-- 1) Extend value_source constraint to support ebay_comps
+alter table public.book_titles
+  drop constraint if exists book_titles_value_source_chk;
+
+alter table public.book_titles
+  add constraint book_titles_value_source_chk
+  check (
+    value_source is null
+    or value_source in ('manual','api','comps','ebay_comps')
+  );
+
+-- 2) Additional valuation/comps fields
+alter table public.book_titles
+  add column if not exists value_confidence text,
+  add column if not exists value_needs_review boolean not null default false,
+  add column if not exists comps_sample_size integer,
+  add column if not exists comps_min numeric(10,2),
+  add column if not exists comps_max numeric(10,2),
+  add column if not exists comps_mean numeric(10,2),
+  add column if not exists comps_median numeric(10,2),
+  add column if not exists comps_last_source text default 'ebay_sold_isbn';
+
+alter table public.book_titles
+  drop constraint if exists book_titles_value_confidence_chk;
+
+alter table public.book_titles
+  add constraint book_titles_value_confidence_chk
+  check (
+    value_confidence is null
+    or value_confidence in ('high','medium','low')
+  );
+
+-- 3) Raw comps snapshot table for auditability
+create table if not exists public.book_value_comps (
+  id uuid primary key default gen_random_uuid(),
+  book_title_id uuid not null references public.book_titles(id) on delete cascade,
+  isbn text,
+  listing_id text,
+  title text,
+  condition text,
+  price numeric(10,2),
+  shipping numeric(10,2),
+  total_price numeric(10,2),
+  sold_at timestamptz,
+  url text,
+  source text not null default 'ebay_sold_isbn',
+  fetched_at timestamptz not null default now()
+);
+
+create index if not exists idx_book_value_comps_book_title_id
+  on public.book_value_comps(book_title_id);
+
+create index if not exists idx_book_value_comps_isbn
+  on public.book_value_comps(isbn);
+
+create index if not exists idx_book_value_comps_listing_id
+  on public.book_value_comps(listing_id);
+
+-- 4) Ingestion log table
+create table if not exists public.value_ingest_log (
+  id uuid primary key default gen_random_uuid(),
+  book_title_id uuid,
+  isbn text,
+  source text not null,
+  status text not null,
+  message text,
+  attempts integer not null default 1,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_value_ingest_log_created_at
+  on public.value_ingest_log(created_at desc);
+
+create index if not exists idx_value_ingest_log_book_title_id
+  on public.value_ingest_log(book_title_id);
+
+-- 5) Helper view for top 3 comps links (latest fetch window)
+create or replace view public.v_book_top_comps as
+with ranked as (
+  select
+    c.book_title_id,
+    c.listing_id,
+    c.title,
+    c.total_price,
+    c.sold_at,
+    c.url,
+    row_number() over (
+      partition by c.book_title_id
+      order by c.sold_at desc nulls last, c.total_price desc nulls last
+    ) as rn
+  from public.book_value_comps c
+)
+select *
+from ranked
+where rn <= 3;
+
+commit;
