@@ -4,6 +4,7 @@ import { supabaseServer } from '@/lib/supabaseServer';
 type LabelRow = {
   id: string;
   title: string;
+  isbn: string;
   sku: string;
   bin_code: string;
   qr_value: string;

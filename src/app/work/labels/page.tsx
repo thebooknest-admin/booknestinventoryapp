@@ -7,6 +7,7 @@ import { colors, typography, spacing, radii } from '@/styles/tokens';
 type LabelRow = {
   id: string;
   title: string;
+  isbn: string;
   sku: string;
   bin_code: string;
   qr_value: string;
@@ -15,8 +16,8 @@ type LabelRow = {
 
 function toCsv(rows: LabelRow[]) {
   const escape = (v: string) => `"${String(v ?? '').replaceAll('"', '""')}"`;
-  const header = ['title', 'sku', 'bin_code', 'qr_value'];
-  const body = rows.map((r) => [escape(r.title), escape(r.sku), escape(r.bin_code), escape(r.qr_value)].join(','));
+  const header = ['title', 'isbn', 'sku', 'bin_code', 'qr_value'];
+  const body = rows.map((r) => [escape(r.title), escape(r.isbn), escape(r.sku), escape(r.bin_code), escape(r.qr_value)].join(','));
   return [header.join(','), ...body].join('\n');
 }
 
@@ -199,6 +200,7 @@ export default function LabelQueuePage() {
           <thead>
             <tr style={{ background: colors.primary, color: colors.cream }}>
               <th style={th}>Title</th>
+              <th style={th}>ISBN</th>
               <th style={th}>SKU</th>
               <th style={th}>Bin</th>
               <th style={th}>QR Value</th>
@@ -206,12 +208,13 @@ export default function LabelQueuePage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} style={td}>Loading...</td></tr>
+              <tr><td colSpan={5} style={td}>Loading...</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={4} style={td}>No active batch rows</td></tr>
+              <tr><td colSpan={5} style={td}>No active batch rows</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
                 <td style={td}>{r.title}</td>
+                <td style={td}>{r.isbn || '—'}</td>
                 <td style={td}>{r.sku}</td>
                 <td style={td}>{r.bin_code || '—'}</td>
                 <td style={td}>{r.qr_value}</td>
