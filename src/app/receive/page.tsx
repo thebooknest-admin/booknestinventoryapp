@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { receiveBook } from '@/app/actions/receive';
@@ -12,12 +12,27 @@ interface BookData {
   coverUrl: string | null;
 }
 
+interface BinOption {
+  bin_code: string;
+  display_name: string | null;
+  age_group: string | null;
+}
+
 const AGE_GROUP_LABELS: Record<string, string> = {
   hatchlings: 'Hatchlings (0-2)',
   fledglings: 'Fledglings (3-5)',
   soarers: 'Soarers (6-8)',
   sky_readers: 'Sky Readers (9-12)',
 };
+
+function normalizeAgeKey(v: string | null | undefined): string {
+  const x = (v || '').trim().toLowerCase();
+  if (x === 'hatch' || x === 'hatchlings') return 'hatchlings';
+  if (x === 'fled' || x === 'fledglings') return 'fledglings';
+  if (x === 'soar' || x === 'soarers') return 'soarers';
+  if (x === 'sky' || x === 'sky_readers' || x === 'sky readers') return 'sky_readers';
+  return x;
+}
 
 export default function ReceivePage() {
   const [isbnInput, setIsbnInput] = useState('');
@@ -49,6 +64,40 @@ export default function ReceivePage() {
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Bin options
+  const [bins, setBins] = useState<BinOption[]>([]);
+
+  const filteredBins = useMemo(() => {
+    if (!ageGroup) return bins;
+    const selected = normalizeAgeKey(ageGroup);
+    return bins.filter((b) => {
+      const binAge = normalizeAgeKey(b.age_group);
+      return !binAge || binAge === selected;
+    });
+  }, [bins, ageGroup]);
+
+  useEffect(() => {
+    const loadBins = async () => {
+      try {
+        const response = await fetch('/api/bins', { cache: 'no-store' });
+        const data = await response.json();
+        if (response.ok) {
+          setBins(data.bins || []);
+        }
+      } catch (err) {
+        console.error('Failed to load bins:', err);
+      }
+    };
+
+    loadBins();
+  }, []);
+
+  useEffect(() => {
+    if (!bin) return;
+    const stillValid = filteredBins.some((b) => b.bin_code === bin);
+    if (!stillValid) setBin('');
+  }, [ageGroup, filteredBins, bin]);
 
   const fetchBinSuggestion = async (selectedAgeGroup: string, selectedTheme: string | null = null) => {
     if (!selectedAgeGroup) return;
@@ -878,24 +927,29 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              <input
-                type="text"
+              <select
                 value={bin}
-                onChange={(e) => setBin(e.target.value.toUpperCase())}
-                placeholder="e.g., A-12-3"
+                onChange={(e) => setBin(e.target.value)}
                 style={{
                   width: '100%',
                   padding: spacing.md,
-                  fontSize: typography.fontSize.lg,
-                  fontWeight: typography.fontWeight.bold,
+                  fontSize: typography.fontSize.base,
+                  fontWeight: typography.fontWeight.semibold,
                   color: colors.text,
                   backgroundColor: colors.cream,
                   border: `3px solid ${colors.border}`,
                   borderRadius: radii.md,
-                  fontFamily: 'monospace',
-                  boxSizing: 'border-box',
+                  fontFamily: typography.fontFamily.body,
+                  cursor: 'pointer',
                 }}
-              />
+              >
+                <option value="">Select bin location...</option>
+                {filteredBins.map((b) => (
+                  <option key={b.bin_code} value={b.bin_code}>
+                    {b.bin_code}{b.display_name ? ` — ${b.display_name}` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
