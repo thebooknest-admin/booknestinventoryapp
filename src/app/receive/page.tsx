@@ -49,7 +49,6 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
 
   const monthsToYears = (m: number) => m / 12;
 
-  // "12 months - 2 years" or "18-24 months"
   const rangeRegex =
     /(\d+(\.\d+)?)\s*(months?|mos?|yrs?|years?)\s*(?:-|to|–|—)\s*(\d+(\.\d+)?)\s*(months?|mos?|yrs?|years?)/i;
 
@@ -69,7 +68,6 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
     };
   }
 
-  // "Ages 3 to 5" or "3 to 5"
   const agesToRegex = /ages?\s*(\d+(\.\d+)?)\s*(?:to|-|–|—)\s*(\d+(\.\d+)?)/i;
   const agesToMatch = input.match(agesToRegex);
   if (agesToMatch) {
@@ -78,7 +76,6 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
     return { minYears: Math.min(a, b), maxYears: Math.max(a, b) };
   }
 
-  // "3+" or "6 and up"
   const plusRegex = /(\d+(\.\d+)?)\s*(?:\+|\s*and up)/i;
   const plusMatch = input.match(plusRegex);
   if (plusMatch) {
@@ -86,7 +83,6 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
     return { minYears: a, maxYears: 12 };
   }
 
-  // Single months: "12 months" / "18 mos"
   const singleMonthsRegex = /(\d+(\.\d+)?)\s*(months?|mos?)/i;
   const singleMonthsMatch = input.match(singleMonthsRegex);
   if (singleMonthsMatch) {
@@ -95,7 +91,6 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
     return { minYears: y, maxYears: y };
   }
 
-  // Single numeric fallback (only if exactly one number is present)
   const nums = input.match(/\d+(\.\d+)?/g);
   if (nums && nums.length === 1) {
     const a = Number(nums[0]);
@@ -105,14 +100,6 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
   return null;
 }
 
-/**
- * Choose best matching Book Nest age category based on overlap.
- * Categories:
- * - Hatchlings: 0–2
- * - Fledglings: 3–5
- * - Soarers: 6–8
- * - Sky Readers: 9–12
- */
 function matchBookNestAgeCategory(minYears: number, maxYears: number): {
   key: 'hatchlings' | 'fledglings' | 'soarers' | 'sky_readers';
   label: string;
@@ -146,7 +133,6 @@ function matchBookNestAgeCategory(minYears: number, maxYears: number): {
       continue;
     }
 
-    // Tie-break: midpoint closeness
     if (score === bestScore) {
       const inputMid = (minYears + maxYears) / 2;
       const cMid = (c.min + c.max) / 2;
@@ -201,6 +187,9 @@ export default function ReceivePage() {
   // Amazon age prompt result (tiny confirmation line)
   const [amazonAgeResult, setAmazonAgeResult] = useState<string | null>(null);
 
+  // ISBN copy UI
+  const [isbnCopied, setIsbnCopied] = useState(false);
+
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -239,7 +228,6 @@ export default function ReceivePage() {
     if (!stillValid) setBin('');
   }, [ageGroup, filteredBins, bin]);
 
-  // When bin changes, fetch tags for quick confirm
   useEffect(() => {
     const loadBinHelp = async () => {
       if (!bin) {
@@ -363,6 +351,7 @@ export default function ReceivePage() {
     setThemeSuggestion(null);
     setBinSuggestion(null);
     setAmazonAgeResult(null);
+    setIsbnCopied(false);
 
     try {
       const response = await fetch(`/api/books?isbn=${encodeURIComponent(isbnInput.trim())}`);
@@ -437,6 +426,7 @@ export default function ReceivePage() {
           setBinSuggestion(null);
           setIsManualEntry(false);
           setAmazonAgeResult(null);
+          setIsbnCopied(false);
         }, 2000);
       } else {
         setError(result.error || 'Failed to receive book');
@@ -461,6 +451,7 @@ export default function ReceivePage() {
     setBinSuggestion(null);
     setIsManualEntry(false);
     setAmazonAgeResult(null);
+    setIsbnCopied(false);
   };
 
   const handleManualEntry = () => {
@@ -494,8 +485,33 @@ export default function ReceivePage() {
       `Matched ${parsed.minYears.toFixed(1)}–${parsed.maxYears.toFixed(1)} yrs → ${matched.label}`
     );
 
-    // refresh bin suggestion using current theme
     fetchBinSuggestion(matched.key, theme);
+  };
+
+  const handleCopyIsbn = async () => {
+    if (!bookData?.isbn) return;
+
+    try {
+      await navigator.clipboard.writeText(bookData.isbn);
+      setIsbnCopied(true);
+      window.setTimeout(() => setIsbnCopied(false), 1200);
+    } catch {
+      // fallback (older browsers / restricted contexts)
+      try {
+        const el = document.createElement('textarea');
+        el.value = bookData.isbn;
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        setIsbnCopied(true);
+        window.setTimeout(() => setIsbnCopied(false), 1200);
+      } catch {
+        window.alert('Copy failed. Please copy manually.');
+      }
+    }
   };
 
   return (
@@ -814,20 +830,43 @@ export default function ReceivePage() {
                   >
                     by {bookData.author}
                   </p>
-                  <div
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: typography.fontSize.base,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.text,
-                      backgroundColor: colors.cream,
-                      padding: spacing.sm,
-                      borderRadius: radii.sm,
-                      border: `2px solid ${colors.border}`,
-                      display: 'inline-block',
-                    }}
-                  >
-                    ISBN: {bookData.isbn}
+
+                  {/* ISBN row with Copy button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+                    <div
+                      style={{
+                        fontFamily: 'monospace',
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.text,
+                        backgroundColor: colors.cream,
+                        padding: spacing.sm,
+                        borderRadius: radii.sm,
+                        border: `2px solid ${colors.border}`,
+                        display: 'inline-block',
+                      }}
+                    >
+                      ISBN: {bookData.isbn}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleCopyIsbn}
+                      style={{
+                        padding: `${spacing.xs} ${spacing.md}`,
+                        borderRadius: radii.md,
+                        border: `2px solid ${colors.border}`,
+                        backgroundColor: isbnCopied ? colors.sageMist : colors.surface,
+                        color: colors.text,
+                        fontSize: typography.fontSize.sm,
+                        fontWeight: typography.fontWeight.semibold,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title="Copy ISBN"
+                    >
+                      {isbnCopied ? '✅ Copied!' : '📋 Copy'}
+                    </button>
                   </div>
                 </div>
               </div>
