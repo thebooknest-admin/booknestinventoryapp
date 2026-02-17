@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
+import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { receiveBook } from '@/app/actions/receive';
 
@@ -152,6 +152,7 @@ export default function ReceivePage() {
   const [bookData, setBookData] = useState<BookData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isManualEntry, setIsManualEntry] = useState(false);
 
   // Form data
   const [ageGroup, setAgeGroup] = useState('');
@@ -181,6 +182,7 @@ export default function ReceivePage() {
     message: string;
   } | null>(null);
   const [isFetchingBinHelp, setIsFetchingBinHelp] = useState(false);
+  const [showBinHelp, setShowBinHelp] = useState(false);
 
   // Amazon age prompt result (tiny confirmation line)
   const [amazonAgeResult, setAmazonAgeResult] = useState<string | null>(null);
@@ -226,13 +228,115 @@ export default function ReceivePage() {
     if (!stillValid) setBin('');
   }, [ageGroup, filteredBins, bin]);
 
-  const fetchBookData = async () => {
-    setError(null);
-    setBookData(null);
+  useEffect(() => {
+    const loadBinHelp = async () => {
+      if (!bin) {
+        setBinHelp(null);
+        setShowBinHelp(false);
+        return;
+      }
+
+      setIsFetchingBinHelp(true);
+      try {
+        const res = await fetch(`/api/bin-help?binCode=${encodeURIComponent(bin)}`, {
+          cache: 'no-store',
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setBinHelp({
+            binCode: data.binCode || bin,
+            binTheme: data.binTheme || '',
+            bestFor: Array.isArray(data.bestFor) ? data.bestFor : [],
+            message: data.message || '',
+          });
+        } else {
+          setBinHelp(null);
+        }
+      } catch {
+        setBinHelp(null);
+      } finally {
+        setIsFetchingBinHelp(false);
+      }
+    };
+
+    loadBinHelp();
+  }, [bin]);
+
+  const fetchBinSuggestion = async (selectedAgeGroup: string, selectedTheme: string | null = null) => {
+    if (!selectedAgeGroup) return;
+
+    setIsFetchingBin(true);
+    setBinSuggestion(null);
+
+    try {
+      const response = await fetch('/api/suggest-bin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ageGroup: selectedAgeGroup, theme: selectedTheme }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.suggestedBin) {
+          setBinSuggestion(data.suggestedBin);
+          setBin(data.suggestedBin);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to get bin suggestion:', err);
+    } finally {
+      setIsFetchingBin(false);
+    }
+  };
+
+  const fetchAgeAndThemeSuggestion = async (book: BookData) => {
+    setIsSuggesting(true);
     setAgeSuggestion(null);
     setThemeSuggestion(null);
-    setBinSuggestion(null);
-    setAmazonAgeResult(null);
+
+    try {
+      const response = await fetch('/api/suggest-age-theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: book.title,
+          author: book.author,
+          isbn: book.isbn,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.ageGroup) {
+          setAgeSuggestion({
+            category: data.ageGroup,
+            explanation: data.ageExplanation,
+          });
+          setAgeGroup(data.ageGroup);
+        }
+
+        if (data.theme) {
+          setThemeSuggestion({
+            theme: data.theme,
+            explanation: data.themeExplanation,
+          });
+          setTheme(data.theme);
+
+          if (data.ageGroup) {
+            fetchBinSuggestion(data.ageGroup, data.theme);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to get suggestions:', err);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  const handleIsbnScan = async (e: React.FormEvent) => {
+    e.preventDefault();
 
     if (!isbnInput.trim()) {
       setError('Please enter an ISBN');
@@ -240,238 +344,55 @@ export default function ReceivePage() {
     }
 
     setIsLoading(true);
+    setError(null);
+    setBookData(null);
+    setSuccessMessage(null);
+    setAgeSuggestion(null);
+    setThemeSuggestion(null);
+    setBinSuggestion(null);
+    setAmazonAgeResult(null);
+    setIsbnCopied(false);
 
     try {
-      const response = await fetch('/api/books/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isbn: isbnInput.trim() }),
-      });
-
-      const data = await response.json();
+      const response = await fetch(`/api/books?isbn=${encodeURIComponent(isbnInput.trim())}`);
 
       if (!response.ok) {
-        setError(data.error || 'Failed to fetch book data');
-        return;
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch book data');
       }
 
-      setBookData({
-        isbn: data.isbn,
-        title: data.title,
-        author: data.author,
-        coverUrl: data.coverUrl || null,
-      });
-    } catch (err: unknown) {
-      console.error(err);
-      setError('Network error. Please try again.');
+      const data = await response.json();
+      setBookData(data);
+
+      setAgeGroup('');
+      setBin('');
+      setTheme(null);
+      setIsManualEntry(false);
+
+      fetchAgeAndThemeSuggestion(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch book data');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleAmazonAgePrompt = async () => {
-    if (!bookData) return;
-
-    const userInput = prompt(
-      `Amazon says this book is for:\n\n(e.g., "4-8 years", "Ages 3 to 5", "3+", "18-24 months")\n\nPaste or type the age range below:`,
-    );
-
-    if (!userInput) return;
-
-    const parsed = parseAmazonAgeRange(userInput);
-    if (!parsed) {
-      alert('Could not parse that age range. Try something like "4-8 years" or "Ages 3-5".');
-      return;
-    }
-
-    const match = matchBookNestAgeCategory(parsed.minYears, parsed.maxYears);
-    setAgeGroup(match.key);
-
-    const msg = `Mapped "${userInput}" (${parsed.minYears}–${parsed.maxYears} years) → ${match.label}`;
-    setAmazonAgeResult(msg);
-
-    setTimeout(() => {
-      setAmazonAgeResult(null);
-    }, 6000);
-  };
-
-  const handleAISuggest = async () => {
-    if (!bookData) return;
-
-    setIsSuggesting(true);
-    setAgeSuggestion(null);
-    setThemeSuggestion(null);
-
-    try {
-      const response = await fetch('/api/ai/suggest-category', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: bookData.title,
-          author: bookData.author,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.category) {
-        setAgeSuggestion({
-          category: data.category,
-          explanation: data.explanation || '',
-        });
-      } else {
-        alert(data.error || 'Failed to get AI suggestion');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Network error while fetching AI suggestion');
-    } finally {
-      setIsSuggesting(false);
-    }
-  };
-
-  const handleAISuggestTheme = async () => {
-    if (!bookData) return;
-
-    setIsSuggesting(true);
-    setThemeSuggestion(null);
-
-    try {
-      const response = await fetch('/api/ai/suggest-theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: bookData.title,
-          author: bookData.author,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.theme) {
-        setThemeSuggestion({
-          theme: data.theme,
-          explanation: data.explanation || '',
-        });
-        setTheme(data.theme);
-      } else {
-        alert(data.error || 'Failed to get theme suggestion');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Network error while fetching theme suggestion');
-    } finally {
-      setIsSuggesting(false);
-    }
-  };
-
-  const handleSuggestBin = async () => {
-    if (!ageGroup) {
-      alert('Please select or confirm age group first');
-      return;
-    }
-
-    setIsFetchingBin(true);
-    setBinSuggestion(null);
-
-    try {
-      const response = await fetch('/api/bins/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          age_group: ageGroup,
-          theme: theme || null,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.bin_code) {
-        setBinSuggestion(data.bin_code);
-      } else {
-        alert(data.error || 'Could not find a suitable bin');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Network error while fetching bin suggestion');
-    } finally {
-      setIsFetchingBin(false);
-    }
-  };
-
-  const handleUseSuggestedBin = () => {
-    if (binSuggestion) {
-      setBin(binSuggestion);
-      setBinSuggestion(null);
-    }
-  };
-
-  const handleUseAgeSuggestion = () => {
-    if (ageSuggestion) {
-      const normalized = normalizeAgeKey(ageSuggestion.category);
-      setAgeGroup(normalized);
-      setAgeSuggestion(null);
-    }
-  };
-
-  useEffect(() => {
-    const fetchBinHelp = async () => {
-      if (!bin) return;
-
-      setIsFetchingBinHelp(true);
-      setBinHelp(null);
-
-      try {
-        const response = await fetch('/api/bins/info', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bin_code: bin }),
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          setBinHelp({
-            binCode: data.bin_code,
-            binTheme: data.bin_theme || '',
-            bestFor: data.best_for || [],
-            message: data.message || '',
-          });
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setIsFetchingBinHelp(false);
-      }
-    };
-
-    if (bin) {
-      fetchBinHelp();
-    }
-  }, [bin]);
-
-  const handleCopyIsbn = async () => {
-    if (bookData?.isbn) {
-      await navigator.clipboard.writeText(bookData.isbn);
-      setIsbnCopied(true);
-      setTimeout(() => setIsbnCopied(false), 2000);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!bookData) return;
 
-    if (!bookData) {
-      alert('No book data available');
+    if (!ageGroup) {
+      setError('Please select an age group');
       return;
     }
 
-    if (!ageGroup) {
-      alert('Please select an age group');
+    if (isManualEntry && (!bookData.title || !bookData.author)) {
+      setError('Please enter title and author');
       return;
     }
 
     setIsSubmitting(true);
+    setError(null);
     setSuccessMessage(null);
 
     try {
@@ -481,610 +402,633 @@ export default function ReceivePage() {
           title: bookData.title,
           author: bookData.author,
           coverUrl: bookData.coverUrl,
-          theme: theme || null,
+          theme: theme,
         },
         {
           isbn: bookData.isbn,
           ageGroup,
-          bin: bin || '',
+          bin,
         }
       );
 
-      if (result.success) {
-        setSuccessMessage(`✓ Received: "${bookData.title}" → ${bin || 'no bin'}`);
-        setIsbnInput('');
-        setBookData(null);
-        setAgeGroup('');
-        setBin('');
-        setTheme(null);
-        setAgeSuggestion(null);
-        setThemeSuggestion(null);
-        setBinSuggestion(null);
-        setAmazonAgeResult(null);
+      if (result.success && result.sku) {
+        setSuccessMessage(`✓ Book received! SKU: ${result.sku}`);
 
         setTimeout(() => {
+          setIsbnInput('');
+          setBookData(null);
+          setAgeGroup('');
+          setBin('');
+          setTheme(null);
           setSuccessMessage(null);
-        }, 5000);
+          setAgeSuggestion(null);
+          setThemeSuggestion(null);
+          setBinSuggestion(null);
+          setIsManualEntry(false);
+          setAmazonAgeResult(null);
+          setIsbnCopied(false);
+        }, 2000);
       } else {
-        alert(result.error || 'Failed to receive book');
+        setError(result.error || 'Failed to receive book');
       }
-    } catch (err) {
-      console.error(err);
-      alert('Network error during submission');
+    } catch {
+      setError('An unexpected error occurred');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleReset = () => {
+  const handleNewScan = () => {
     setIsbnInput('');
     setBookData(null);
-    setError(null);
     setAgeGroup('');
     setBin('');
     setTheme(null);
+    setError(null);
+    setSuccessMessage(null);
     setAgeSuggestion(null);
     setThemeSuggestion(null);
     setBinSuggestion(null);
+    setIsManualEntry(false);
     setAmazonAgeResult(null);
-    setSuccessMessage(null);
+    setIsbnCopied(false);
   };
 
   const handleManualEntry = () => {
-    const title = prompt('Enter book title:');
-    if (!title) return;
-
-    const author = prompt('Enter author name:');
-    if (!author) return;
-
-    const isbn = prompt('Enter ISBN (optional):') || '';
-
+    setIsManualEntry(true);
+    setError(null);
     setBookData({
-      isbn,
-      title,
-      author,
+      isbn: isbnInput.trim(),
+      title: '',
+      author: '',
       coverUrl: null,
     });
+  };
+
+  const handleAmazonAgePrompt = () => {
+    const pasted = window.prompt(
+      'Paste Amazon age range (examples: "4-8 years", "3+", "12 months - 2 years"):',
+      ''
+    );
+
+    if (pasted === null) return; // cancelled
+    const parsed = parseAmazonAgeRange(pasted);
+
+    if (!parsed) {
+      window.alert('Could not read that age range. Try: "4-8 years", "3+", "12 months - 2 years".');
+      return;
+    }
+
+    const matched = matchBookNestAgeCategory(parsed.minYears, parsed.maxYears);
+    setAgeGroup(matched.key);
+    setAmazonAgeResult(
+      `Matched ${parsed.minYears.toFixed(1)}–${parsed.maxYears.toFixed(1)} yrs → ${matched.label}`
+    );
+
+    fetchBinSuggestion(matched.key, theme);
+  };
+
+  const handleCopyIsbn = async () => {
+    if (!bookData?.isbn) return;
+
+    try {
+      await navigator.clipboard.writeText(bookData.isbn);
+      setIsbnCopied(true);
+      window.setTimeout(() => setIsbnCopied(false), 1200);
+    } catch {
+      // fallback (older browsers / restricted contexts)
+      try {
+        const el = document.createElement('textarea');
+        el.value = bookData.isbn;
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        setIsbnCopied(true);
+        window.setTimeout(() => setIsbnCopied(false), 1200);
+      } catch {
+        window.alert('Copy failed. Please copy manually.');
+      }
+    }
   };
 
   return (
     <div
       style={{
-        maxWidth: '600px',
-        margin: '0 auto',
+        minHeight: '100vh',
         padding: spacing.xl,
-        fontFamily: typography.fontFamily.body,
+        maxWidth: '1000px',
+        margin: '0 auto',
       }}
     >
-      <style>{`
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        
-        .slide-up {
-          animation: slideUp 0.3s ease-out;
-        }
-        
-        .pulsing {
-          animation: pulse 1.5s ease-in-out infinite;
-        }
-        
-        .spinning {
-          animation: spin 1s linear infinite;
-        }
-        
-        button:hover:not(:disabled) {
-          transform: translateY(-1px);
-          transition: all 0.2s ease;
-        }
-        
-        button:active:not(:disabled) {
-          transform: translateY(0);
-        }
-        
-        select:focus, input:focus {
-          outline: none;
-          border-color: ${colors.primary} !important;
-          box-shadow: 0 0 0 3px ${colors.primary}20;
-        }
-      `}</style>
-
-      {/* Header */}
-      <div
+      <header
         style={{
           marginBottom: spacing.xl,
           paddingBottom: spacing.lg,
-          borderBottom: `2px solid ${colors.border}`,
+          borderBottom: `3px solid ${colors.primary}`,
         }}
       >
-        <h1
+        <Link
+          href="/dashboard"
           style={{
-            fontSize: typography.fontSize['3xl'],
-            fontWeight: 900,
+            display: 'inline-block',
             color: colors.primary,
-            marginBottom: spacing.xs,
-            letterSpacing: '-0.02em',
+            textDecoration: 'none',
+            fontSize: typography.fontSize.base,
+            fontWeight: typography.fontWeight.semibold,
+            marginBottom: spacing.sm,
           }}
         >
-          Receive Book
-        </h1>
-        <p
+          ← DASHBOARD
+        </Link>
+        <h1
           style={{
-            fontSize: typography.fontSize.base,
-            color: colors.textLight,
+            fontFamily: typography.fontFamily.heading,
+            fontSize: typography.fontSize['3xl'],
+            fontWeight: typography.fontWeight.bold,
+            color: colors.primary,
             margin: 0,
           }}
         >
-          Scan or enter ISBN to add books to inventory
-        </p>
-      </div>
+          Receive Books
+        </h1>
+        <div style={{ marginTop: spacing.sm }}>
+          <Link
+            href="/receive/batch"
+            style={{
+              display: 'inline-block',
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: radii.sm,
+              border: `2px solid ${colors.border}`,
+              backgroundColor: colors.surface,
+              color: colors.text,
+              textDecoration: 'none',
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+            }}
+          >
+            ⚡ Batch Receive Mode (up to 20)
+          </Link>
+        </div>
+      </header>
 
-      {/* Success Message */}
       {successMessage && (
         <div
-          className="slide-up"
           style={{
-            padding: spacing.lg,
-            backgroundColor: colors.sageMist,
-            border: `2px solid ${colors.deepTeal}`,
-            borderRadius: radii.lg,
-            marginBottom: spacing.xl,
-            fontSize: typography.fontSize.base,
-            fontWeight: typography.fontWeight.semibold,
+            backgroundColor: colors.success,
             color: colors.deepCocoa,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            padding: spacing.lg,
+            borderRadius: radii.md,
+            marginBottom: spacing.lg,
+            fontSize: typography.fontSize.xl,
+            fontWeight: typography.fontWeight.bold,
+            textAlign: 'center',
+            border: `3px solid ${colors.sageMist}`,
           }}
         >
           {successMessage}
         </div>
       )}
 
-      {/* ISBN Lookup */}
-      {!bookData && (
-        <div
-          className="slide-up"
-          style={{
-            padding: spacing.xl,
-            backgroundColor: colors.surface,
-            border: `2px solid ${colors.border}`,
-            borderRadius: radii.lg,
-            marginBottom: spacing.xl,
-            boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-          }}
-        >
-          <label
+      {error && (
+        <div>
+          <div
             style={{
-              display: 'block',
-              fontSize: typography.fontSize.sm,
-              fontWeight: typography.fontWeight.bold,
-              color: colors.textLight,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: spacing.md,
+              backgroundColor: colors.warning,
+              color: colors.deepCocoa,
+              padding: spacing.lg,
+              borderRadius: radii.md,
+              marginBottom: spacing.lg,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.semibold,
+              border: `3px solid ${colors.mustardOchre}`,
             }}
           >
-            ISBN Number
-          </label>
+            {error}
+          </div>
 
-          <div style={{ display: 'flex', gap: spacing.sm, marginBottom: spacing.md }}>
+          <button
+            onClick={handleManualEntry}
+            style={{
+              width: '100%',
+              padding: spacing.lg,
+              backgroundColor: colors.secondary,
+              color: colors.cream,
+              border: `3px solid ${colors.secondary}`,
+              fontSize: typography.fontSize.lg,
+              fontWeight: typography.fontWeight.bold,
+              textTransform: 'uppercase',
+              borderRadius: radii.md,
+              cursor: 'pointer',
+              marginBottom: spacing.lg,
+            }}
+          >
+            ✏️ Enter Book Info Manually
+          </button>
+        </div>
+      )}
+
+      {!bookData && (
+        <form onSubmit={handleIsbnScan}>
+          <div
+            style={{
+              backgroundColor: colors.surface,
+              border: `3px solid ${colors.border}`,
+              borderRadius: radii.md,
+              padding: spacing.xl,
+              marginBottom: spacing.lg,
+            }}
+          >
+            <label
+              style={{
+                display: 'block',
+                fontSize: typography.fontSize.sm,
+                fontWeight: typography.fontWeight.bold,
+                color: colors.textLight,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: spacing.sm,
+              }}
+            >
+              Scan or Enter ISBN
+            </label>
             <input
               type="text"
               value={isbnInput}
               onChange={(e) => setIsbnInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  fetchBookData();
-                }
-              }}
-              placeholder="978-0-..."
+              placeholder="Scan barcode or type ISBN..."
+              autoFocus
               disabled={isLoading}
               style={{
-                flex: 1,
+                width: '100%',
                 padding: spacing.md,
-                fontSize: typography.fontSize.lg,
-                fontWeight: typography.fontWeight.medium,
+                fontSize: typography.fontSize['2xl'],
+                fontWeight: typography.fontWeight.bold,
                 color: colors.text,
                 backgroundColor: colors.cream,
                 border: `3px solid ${colors.border}`,
                 borderRadius: radii.md,
                 fontFamily: 'monospace',
-                transition: 'all 0.2s ease',
+                boxSizing: 'border-box',
+                marginBottom: spacing.md,
               }}
             />
-
             <button
-              type="button"
-              onClick={fetchBookData}
+              type="submit"
               disabled={isLoading || !isbnInput.trim()}
               style={{
-                padding: `${spacing.md} ${spacing.lg}`,
+                width: '100%',
+                padding: spacing.lg,
                 backgroundColor: isLoading || !isbnInput.trim() ? colors.border : colors.primary,
-                color: colors.cream,
-                border: 'none',
-                fontSize: typography.fontSize.base,
+                color: isLoading || !isbnInput.trim() ? colors.textLight : colors.cream,
+                border: `3px solid ${isLoading || !isbnInput.trim() ? colors.border : colors.primary}`,
+                fontSize: typography.fontSize.lg,
                 fontWeight: typography.fontWeight.bold,
+                textTransform: 'uppercase',
                 borderRadius: radii.md,
                 cursor: isLoading || !isbnInput.trim() ? 'not-allowed' : 'pointer',
-                whiteSpace: 'nowrap',
-                minWidth: '100px',
-                transition: 'all 0.2s ease',
               }}
             >
-              {isLoading ? (
-                <span className="pulsing">Searching...</span>
-              ) : (
-                'Look Up'
-              )}
+              {isLoading ? 'LOOKING UP...' : 'LOOKUP BOOK'}
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={handleManualEntry}
-            disabled={isLoading}
-            style={{
-              width: '100%',
-              padding: spacing.md,
-              backgroundColor: 'transparent',
-              color: colors.textLight,
-              border: `2px dashed ${colors.border}`,
-              fontSize: typography.fontSize.sm,
-              fontWeight: typography.fontWeight.semibold,
-              borderRadius: radii.md,
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            Or enter book details manually
-          </button>
-
-          {error && (
-            <div
-              className="slide-up"
-              style={{
-                marginTop: spacing.md,
-                padding: spacing.md,
-                backgroundColor: '#fef2f2',
-                border: '2px solid #fca5a5',
-                borderRadius: radii.sm,
-                fontSize: typography.fontSize.sm,
-                color: '#991b1b',
-              }}
-            >
-              {error}
-            </div>
-          )}
-        </div>
+        </form>
       )}
 
-      {/* Book Info & Form */}
       {bookData && (
-        <form onSubmit={handleSubmit} className="slide-up">
-          {/* Book Card */}
+        <form onSubmit={handleSubmit}>
+          {/* Book Info Display */}
           <div
             style={{
-              padding: spacing.xl,
               backgroundColor: colors.surface,
-              border: `2px solid ${colors.border}`,
-              borderRadius: radii.lg,
-              marginBottom: spacing.xl,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              border: `3px solid ${colors.border}`,
+              borderRadius: radii.md,
+              padding: spacing.xl,
+              marginBottom: spacing.lg,
             }}
           >
-            <div style={{ display: 'flex', gap: spacing.lg, marginBottom: spacing.lg }}>
-              {bookData.coverUrl ? (
-                <div
-                  style={{
-                    width: 100,
-                    height: 150,
-                    position: 'relative',
-                    borderRadius: radii.md,
-                    border: `2px solid ${colors.border}`,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <Image
-                    src={bookData.coverUrl}
-                    alt={bookData.title}
-                    fill
-                    style={{ objectFit: 'cover' }}
+            {isManualEntry ? (
+              <div style={{ marginBottom: spacing.lg }}>
+                <div style={{ marginBottom: spacing.lg }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.textLight,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={bookData.title}
+                    onChange={(e) => setBookData({ ...bookData, title: e.target.value })}
+                    placeholder="Enter book title..."
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.lg,
+                      fontWeight: typography.fontWeight.semibold,
+                      color: colors.text,
+                      backgroundColor: colors.cream,
+                      border: `3px solid ${colors.border}`,
+                      borderRadius: radii.md,
+                      boxSizing: 'border-box',
+                    }}
                   />
                 </div>
-              ) : (
+
+                <div style={{ marginBottom: 0 }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.textLight,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    Author *
+                  </label>
+                  <input
+                    type="text"
+                    value={bookData.author}
+                    onChange={(e) => setBookData({ ...bookData, author: e.target.value })}
+                    placeholder="Enter author name..."
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.lg,
+                      fontWeight: typography.fontWeight.semibold,
+                      color: colors.text,
+                      backgroundColor: colors.cream,
+                      border: `3px solid ${colors.border}`,
+                      borderRadius: radii.md,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: spacing.xl, marginBottom: spacing.lg }}>
                 <div
                   style={{
-                    width: 100,
-                    height: 150,
+                    width: '120px',
+                    height: '160px',
                     backgroundColor: colors.cream,
                     border: `2px solid ${colors.border}`,
-                    borderRadius: radii.md,
+                    borderRadius: radii.sm,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: typography.fontSize.xs,
                     color: colors.textLight,
-                    textAlign: 'center',
-                    padding: spacing.sm,
+                    flexShrink: 0,
+                    overflow: 'hidden',
                   }}
                 >
-                  No Cover
+                  {bookData.coverUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={bookData.coverUrl}
+                      alt={bookData.title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    'No Cover'
+                  )}
                 </div>
-              )}
 
-              <div style={{ flex: 1 }}>
-                <h2
-                  style={{
-                    fontSize: typography.fontSize.xl,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.text,
-                    marginBottom: spacing.xs,
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {bookData.title}
-                </h2>
-                <p
-                  style={{
-                    fontSize: typography.fontSize.base,
-                    color: colors.textLight,
-                    marginBottom: spacing.md,
-                  }}
-                >
-                  by {bookData.author}
-                </p>
+                <div style={{ flex: 1 }}>
+                  <h2
+                    style={{
+                      fontFamily: typography.fontFamily.heading,
+                      fontSize: typography.fontSize['2xl'],
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.text,
+                      margin: 0,
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    {bookData.title}
+                  </h2>
+                  <p
+                    style={{
+                      fontSize: typography.fontSize.lg,
+                      color: colors.textLight,
+                      margin: 0,
+                      marginBottom: spacing.md,
+                    }}
+                  >
+                    by {bookData.author}
+                  </p>
 
-                {bookData.isbn && (
+                  {/* ISBN row with Copy button */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
-                    <span
+                    <div
                       style={{
-                        fontSize: typography.fontSize.xs,
                         fontFamily: 'monospace',
-                        color: colors.textLight,
-                        padding: `${spacing.xs} ${spacing.sm}`,
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.text,
                         backgroundColor: colors.cream,
+                        padding: spacing.sm,
                         borderRadius: radii.sm,
-                        border: `1px solid ${colors.border}`,
+                        border: `2px solid ${colors.border}`,
+                        display: 'inline-block',
                       }}
                     >
-                      {bookData.isbn}
-                    </span>
+                      ISBN: {bookData.isbn}
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleCopyIsbn}
                       style={{
-                        padding: `${spacing.xs} ${spacing.sm}`,
-                        backgroundColor: isbnCopied ? colors.sageMist : 'transparent',
-                        color: isbnCopied ? colors.deepTeal : colors.textLight,
-                        border: `1px solid ${isbnCopied ? colors.deepTeal : colors.border}`,
-                        borderRadius: radii.sm,
-                        fontSize: typography.fontSize.xs,
+                        padding: `${spacing.xs} ${spacing.md}`,
+                        borderRadius: radii.md,
+                        border: `2px solid ${colors.border}`,
+                        backgroundColor: isbnCopied ? colors.sageMist : colors.surface,
+                        color: colors.text,
+                        fontSize: typography.fontSize.sm,
                         fontWeight: typography.fontWeight.semibold,
                         cursor: 'pointer',
-                        transition: 'all 0.2s ease',
+                        whiteSpace: 'nowrap',
                       }}
+                      title="Copy ISBN"
                     >
-                      {isbnCopied ? '✓ Copied' : 'Copy'}
+                      {isbnCopied ? '✅ Copied!' : '📋 Copy'}
                     </button>
                   </div>
-                )}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Action Buttons Row */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: spacing.sm,
-              }}
-            >
+            <div style={{ display: 'flex', gap: spacing.md }}>
               <button
                 type="button"
-                onClick={handleAmazonAgePrompt}
+                onClick={handleNewScan}
                 style={{
+                  flex: 1,
                   padding: spacing.md,
-                  backgroundColor: colors.cream,
+                  backgroundColor: colors.surface,
                   color: colors.text,
                   border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.sm,
+                  fontSize: typography.fontSize.base,
                   fontWeight: typography.fontWeight.semibold,
-                  borderRadius: radii.md,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                📦 Amazon
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAISuggest}
-                disabled={isSuggesting}
-                style={{
-                  padding: spacing.md,
-                  backgroundColor: colors.cream,
-                  color: colors.text,
-                  border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.semibold,
-                  borderRadius: radii.md,
-                  cursor: isSuggesting ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {isSuggesting ? <span className="pulsing">✨ AI...</span> : '✨ AI Age'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAISuggestTheme}
-                disabled={isSuggesting}
-                style={{
-                  padding: spacing.md,
-                  backgroundColor: colors.cream,
-                  color: colors.text,
-                  border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.semibold,
-                  borderRadius: radii.md,
-                  cursor: isSuggesting ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {isSuggesting ? <span className="pulsing">🏷️ AI...</span> : '🏷️ AI Theme'}
-              </button>
-            </div>
-
-            {/* Amazon Age Result */}
-            {amazonAgeResult && (
-              <div
-                className="slide-up"
-                style={{
-                  marginTop: spacing.md,
-                  padding: spacing.md,
-                  backgroundColor: colors.sageMist,
-                  border: `2px solid ${colors.deepTeal}`,
                   borderRadius: radii.sm,
-                  fontSize: typography.fontSize.sm,
-                  color: colors.deepCocoa,
+                  cursor: 'pointer',
                 }}
               >
-                {amazonAgeResult}
-              </div>
-            )}
-
-            {/* Age Suggestion */}
-            {ageSuggestion && (
-              <div
-                className="slide-up"
-                style={{
-                  marginTop: spacing.md,
-                  padding: spacing.lg,
-                  backgroundColor: colors.goldenHoney,
-                  border: `2px solid ${colors.mustardOchre}`,
-                  borderRadius: radii.md,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: typography.fontSize.sm,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.deepCocoa,
-                    marginBottom: spacing.sm,
-                  }}
-                >
-                  💡 Suggested Age Group
-                </div>
-                <div
-                  style={{
-                    fontSize: typography.fontSize.lg,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.text,
-                    marginBottom: spacing.sm,
-                  }}
-                >
-                  {AGE_GROUP_LABELS[normalizeAgeKey(ageSuggestion.category)] || ageSuggestion.category}
-                </div>
-                <div
-                  style={{
-                    fontSize: typography.fontSize.sm,
-                    color: colors.deepCocoa,
-                    marginBottom: spacing.md,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {ageSuggestion.explanation}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleUseAgeSuggestion}
-                  style={{
-                    padding: `${spacing.sm} ${spacing.md}`,
-                    backgroundColor: colors.primary,
-                    color: colors.cream,
-                    border: 'none',
-                    fontSize: typography.fontSize.sm,
-                    fontWeight: typography.fontWeight.bold,
-                    borderRadius: radii.md,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  Use This Age Group
-                </button>
-              </div>
-            )}
-
-            {/* Reset Button */}
-            <button
-              type="button"
-              onClick={handleReset}
-              style={{
-                marginTop: spacing.md,
-                width: '100%',
-                padding: spacing.sm,
-                backgroundColor: 'transparent',
-                color: colors.textLight,
-                border: 'none',
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.medium,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              ← Start over with different book
-            </button>
+                🔄 New Scan
+              </button>
+            </div>
           </div>
 
-          {/* Form Fields */}
+          {/* Receiving Details */}
           <div
             style={{
-              padding: spacing.xl,
               backgroundColor: colors.surface,
-              border: `2px solid ${colors.border}`,
-              borderRadius: radii.lg,
+              border: `3px solid ${colors.border}`,
+              borderRadius: radii.md,
+              padding: spacing.xl,
               marginBottom: spacing.lg,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
             }}
           >
+            <h3
+              style={{
+                fontFamily: typography.fontFamily.heading,
+                fontSize: typography.fontSize.xl,
+                fontWeight: typography.fontWeight.bold,
+                color: colors.text,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                margin: 0,
+                marginBottom: spacing.lg,
+              }}
+            >
+              Receiving Details
+            </h3>
+
             {/* Age Group */}
-            <div style={{ marginBottom: spacing.xl }}>
-              <label
+            <div style={{ marginBottom: spacing.lg }}>
+              <div
                 style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.textLight,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   marginBottom: spacing.sm,
+                  gap: spacing.md,
                 }}
               >
-                Age Group *
-              </label>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.textLight,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    margin: 0,
+                  }}
+                >
+                  Age Group *
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleAmazonAgePrompt}
+                  style={{
+                    padding: `${spacing.xs} ${spacing.sm}`,
+                    borderRadius: radii.md,
+                    border: `2px solid ${colors.border}`,
+                    backgroundColor: colors.surface,
+                    color: colors.text,
+                    fontSize: typography.fontSize.xs,
+                    fontWeight: typography.fontWeight.semibold,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title='Paste the Amazon "Reading age" or "Age range" and I’ll match it to your categories'
+                >
+                  🧩 Amazon age match
+                </button>
+              </div>
+
+              {amazonAgeResult && (
+                <div
+                  style={{
+                    padding: spacing.sm,
+                    backgroundColor: colors.sageMist,
+                    border: `2px solid ${colors.deepTeal}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.deepCocoa,
+                  }}
+                >
+                  ✅ {amazonAgeResult}
+                </div>
+              )}
+
+              {isSuggesting && (
+                <div
+                  style={{
+                    padding: spacing.sm,
+                    backgroundColor: colors.cream,
+                    border: `2px solid ${colors.border}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                    fontSize: typography.fontSize.sm,
+                    color: colors.textLight,
+                  }}
+                >
+                  🤔 Analyzing book to suggest age category and theme...
+                </div>
+              )}
+
+              {ageSuggestion && (
+                <div
+                  style={{
+                    padding: spacing.md,
+                    backgroundColor: colors.sageMist,
+                    border: `2px solid ${colors.deepTeal}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.deepCocoa,
+                      marginBottom: spacing.xs,
+                    }}
+                  >
+                    💡 Suggested: {AGE_GROUP_LABELS[ageSuggestion.category]}
+                  </div>
+                  <div style={{ fontSize: typography.fontSize.xs, color: colors.deepCocoa }}>
+                    {ageSuggestion.explanation}
+                  </div>
+                </div>
+              )}
 
               <select
                 value={ageGroup}
-                onChange={(e) => setAgeGroup(e.target.value)}
+                onChange={(e) => {
+                  setAgeGroup(e.target.value);
+                  setAmazonAgeResult(null);
+                  if (e.target.value) fetchBinSuggestion(e.target.value, theme);
+                }}
                 required
                 style={{
                   width: '100%',
@@ -1097,253 +1041,200 @@ export default function ReceivePage() {
                   borderRadius: radii.md,
                   fontFamily: typography.fontFamily.body,
                   cursor: 'pointer',
-                  transition: 'all 0.2s ease',
                 }}
               >
                 <option value="">Select age group...</option>
-                <option value="hatchlings">🥚 Hatchlings (0-2)</option>
-                <option value="fledglings">🐣 Fledglings (3-5)</option>
-                <option value="soarers">🦅 Soarers (6-8)</option>
-                <option value="sky_readers">☁️ Sky Readers (9-12)</option>
+                <option value="hatchlings">Hatchlings (0-2)</option>
+                <option value="fledglings">Fledglings (3-5)</option>
+                <option value="soarers">Soarers (6-8)</option>
+                <option value="sky_readers">Sky Readers (9-12)</option>
               </select>
             </div>
 
-            {/* Bin Location - Only show when age group selected */}
-            {ageGroup && (
-              <div className="slide-up" style={{ marginBottom: 0 }}>
-                <div
+            {/* Bin Location */}
+            <div style={{ marginBottom: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: spacing.sm,
+                }}
+              >
+                <label
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: spacing.md,
+                    display: 'block',
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.textLight,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    margin: 0,
                   }}
                 >
-                  <label
+                  Bin Location
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBinHelp((s) => !s)}
+                  disabled={!bin || isFetchingBinHelp}
+                  title={!bin ? 'Select a bin to view tags' : 'View tags for this bin'}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    border: `2px solid ${colors.border}`,
+                    backgroundColor: !bin ? colors.border : colors.surface,
+                    color: colors.text,
+                    fontWeight: typography.fontWeight.bold,
+                    cursor: !bin ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  i
+                </button>
+              </div>
+
+              {showBinHelp && (
+                <div
+                  style={{
+                    padding: spacing.md,
+                    backgroundColor: colors.cream,
+                    border: `2px solid ${colors.border}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                  }}
+                >
+                  <div
                     style={{
                       fontSize: typography.fontSize.sm,
                       fontWeight: typography.fontWeight.bold,
-                      color: colors.textLight,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
+                      color: colors.deepCocoa,
+                      marginBottom: spacing.xs,
                     }}
                   >
-                    Bin Location
-                  </label>
+                    🧷 Bin tags for {bin}
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={handleSuggestBin}
-                    disabled={isFetchingBin}
-                    style={{
-                      padding: `${spacing.sm} ${spacing.md}`,
-                      backgroundColor: isFetchingBin ? colors.border : colors.cream,
-                      color: colors.text,
-                      border: `2px solid ${colors.border}`,
-                      fontSize: typography.fontSize.xs,
-                      fontWeight: typography.fontWeight.bold,
-                      borderRadius: radii.md,
-                      cursor: isFetchingBin ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    {isFetchingBin ? (
-                      <span className="pulsing">Finding bin...</span>
-                    ) : (
-                      '🎯 Suggest Bin'
-                    )}
-                  </button>
+                  {isFetchingBinHelp ? (
+                    <div style={{ fontSize: typography.fontSize.sm, color: colors.textLight }}>
+                      Loading tags...
+                    </div>
+                  ) : binHelp?.bestFor?.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
+                      {binHelp.bestFor.map((t) => (
+                        <span
+                          key={t}
+                          style={{
+                            padding: `${spacing.xs} ${spacing.sm}`,
+                            borderRadius: radii.md,
+                            border: `1px solid ${colors.border}`,
+                            backgroundColor: colors.surface,
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.semibold,
+                            color: colors.text,
+                          }}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: typography.fontSize.sm, color: colors.textLight }}>
+                      No tags found for this bin.
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {/* Theme Suggestion */}
-                {themeSuggestion && (
-                  <div
-                    className="slide-up"
-                    style={{
-                      padding: spacing.md,
-                      backgroundColor: colors.goldenHoney,
-                      border: `2px solid ${colors.mustardOchre}`,
-                      borderRadius: radii.md,
-                      marginBottom: spacing.md,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.bold,
-                        color: colors.deepCocoa,
-                        marginBottom: spacing.xs,
-                      }}
-                    >
-                      🏷️ Theme: {themeSuggestion.theme.charAt(0).toUpperCase() + themeSuggestion.theme.slice(1)}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: typography.fontSize.xs,
-                        color: colors.deepCocoa,
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {themeSuggestion.explanation}
-                    </div>
-                  </div>
-                )}
-
-                {/* Bin Suggestion */}
-                {binSuggestion && (
-                  <div
-                    className="slide-up"
-                    style={{
-                      padding: spacing.md,
-                      backgroundColor: colors.sageMist,
-                      border: `2px solid ${colors.deepTeal}`,
-                      borderRadius: radii.md,
-                      marginBottom: spacing.md,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: spacing.md,
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: typography.fontSize.sm,
-                          fontWeight: typography.fontWeight.bold,
-                          color: colors.deepCocoa,
-                        }}
-                      >
-                        📍 Suggested: {binSuggestion}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleUseSuggestedBin}
-                      style={{
-                        padding: `${spacing.sm} ${spacing.md}`,
-                        backgroundColor: colors.deepTeal,
-                        color: colors.cream,
-                        border: 'none',
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.bold,
-                        borderRadius: radii.md,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      Use This
-                    </button>
-                  </div>
-                )}
-
-                {/* Bin Select */}
-                <select
-                  value={bin}
-                  onChange={(e) => setBin(e.target.value)}
+              {isFetchingBin && (
+                <div
                   style={{
-                    width: '100%',
-                    padding: spacing.md,
-                    fontSize: typography.fontSize.base,
-                    fontWeight: typography.fontWeight.semibold,
-                    color: colors.text,
+                    padding: spacing.sm,
                     backgroundColor: colors.cream,
-                    border: `3px solid ${colors.border}`,
-                    borderRadius: radii.md,
-                    fontFamily: typography.fontFamily.body,
-                    cursor: 'pointer',
-                    marginBottom: bin ? spacing.md : 0,
-                    transition: 'all 0.2s ease',
+                    border: `2px solid ${colors.border}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                    fontSize: typography.fontSize.sm,
+                    color: colors.textLight,
                   }}
                 >
-                  <option value="">Select bin location...</option>
-                  {filteredBins.map((b) => (
-                    <option key={b.bin_code} value={b.bin_code}>
-                      {b.bin_code}
-                      {b.display_name ? ` — ${b.display_name}` : ''}
-                    </option>
-                  ))}
-                </select>
+                  🔍 Finding best available bin...
+                </div>
+              )}
 
-                {/* Bin Tags - Auto-shown when bin selected */}
-                {bin && binHelp && (
+              {binSuggestion && (
+                <div
+                  style={{
+                    padding: spacing.sm,
+                    backgroundColor: colors.sageMist,
+                    border: `2px solid ${colors.deepTeal}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.deepCocoa,
+                  }}
+                >
+                  📍 Suggested: {binSuggestion}
+                </div>
+              )}
+
+              {/* Theme Suggestion (under Bin Location) */}
+              {themeSuggestion && (
+                <div
+                  style={{
+                    padding: spacing.md,
+                    backgroundColor: colors.goldenHoney,
+                    border: `2px solid ${colors.mustardOchre}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                  }}
+                >
                   <div
-                    className="slide-up"
                     style={{
-                      padding: spacing.md,
-                      backgroundColor: colors.cream,
-                      border: `2px solid ${colors.border}`,
-                      borderRadius: radii.md,
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.deepCocoa,
+                      marginBottom: spacing.xs,
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.bold,
-                        color: colors.deepCocoa,
-                        marginBottom: spacing.sm,
-                      }}
-                    >
-                      📚 Tags in {bin}
-                    </div>
-
-                    {isFetchingBinHelp ? (
-                      <div
-                        className="pulsing"
-                        style={{
-                          fontSize: typography.fontSize.sm,
-                          color: colors.textLight,
-                        }}
-                      >
-                        Loading tags...
-                      </div>
-                    ) : binHelp.bestFor?.length ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
-                        {binHelp.bestFor.slice(0, 6).map((t) => (
-                          <span
-                            key={t}
-                            style={{
-                              padding: `${spacing.xs} ${spacing.sm}`,
-                              borderRadius: radii.md,
-                              border: `1px solid ${colors.border}`,
-                              backgroundColor: colors.surface,
-                              fontSize: typography.fontSize.xs,
-                              fontWeight: typography.fontWeight.semibold,
-                              color: colors.text,
-                            }}
-                          >
-                            {t}
-                          </span>
-                        ))}
-                        {binHelp.bestFor.length > 6 && (
-                          <span
-                            style={{
-                              padding: `${spacing.xs} ${spacing.sm}`,
-                              fontSize: typography.fontSize.xs,
-                              color: colors.textLight,
-                            }}
-                          >
-                            +{binHelp.bestFor.length - 6} more
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: typography.fontSize.sm,
-                          color: colors.textLight,
-                        }}
-                      >
-                        No tags found for this bin.
-                      </div>
-                    )}
+                    🏷️ Theme:{' '}
+                    {themeSuggestion.theme.charAt(0).toUpperCase() + themeSuggestion.theme.slice(1)}
                   </div>
-                )}
-              </div>
-            )}
+                  <div style={{ fontSize: typography.fontSize.xs, color: colors.deepCocoa }}>
+                    {themeSuggestion.explanation}
+                  </div>
+                </div>
+              )}
+
+              <select
+                value={bin}
+                onChange={(e) => setBin(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: spacing.md,
+                  fontSize: typography.fontSize.base,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.text,
+                  backgroundColor: colors.cream,
+                  border: `3px solid ${colors.border}`,
+                  borderRadius: radii.md,
+                  fontFamily: typography.fontFamily.body,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">Select bin location...</option>
+                {filteredBins.map((b) => (
+                  <option key={b.bin_code} value={b.bin_code}>
+                    {b.bin_code}
+                    {b.display_name ? ` — ${b.display_name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isSubmitting || !ageGroup}
@@ -1352,22 +1243,15 @@ export default function ReceivePage() {
               padding: spacing.xl,
               backgroundColor: isSubmitting || !ageGroup ? colors.border : colors.primary,
               color: isSubmitting || !ageGroup ? colors.textLight : colors.cream,
-              border: 'none',
+              border: `3px solid ${isSubmitting || !ageGroup ? colors.border : colors.primary}`,
               fontSize: typography.fontSize.xl,
-              fontWeight: 900,
+              fontWeight: typography.fontWeight.bold,
               textTransform: 'uppercase',
-              borderRadius: radii.lg,
+              borderRadius: radii.md,
               cursor: isSubmitting || !ageGroup ? 'not-allowed' : 'pointer',
-              boxShadow: isSubmitting || !ageGroup ? 'none' : '0 4px 12px rgba(0,0,0,0.15)',
-              letterSpacing: '0.05em',
-              transition: 'all 0.2s ease',
             }}
           >
-            {isSubmitting ? (
-              <span className="pulsing">RECEIVING...</span>
-            ) : (
-              'RECEIVE BOOK →'
-            )}
+            {isSubmitting ? 'RECEIVING...' : 'RECEIVE BOOK →'}
           </button>
         </form>
       )}
