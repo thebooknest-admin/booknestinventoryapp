@@ -34,6 +34,133 @@ function normalizeAgeKey(v: string | null | undefined): string {
   return x;
 }
 
+/**
+ * Parse common Amazon-style age range strings into {minYears, maxYears}
+ * Examples:
+ * - "4-8 years"
+ * - "Ages 3 to 5"
+ * - "3+"
+ * - "12 months - 2 years"
+ * - "18-24 months"
+ */
+function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: number } | null {
+  const input = (inputRaw || '').trim().toLowerCase();
+  if (!input) return null;
+
+  const monthsToYears = (m: number) => m / 12;
+
+  // "12 months - 2 years" or "18-24 months"
+  const rangeRegex =
+    /(\d+(\.\d+)?)\s*(months?|mos?|yrs?|years?)\s*(?:-|to|–|—)\s*(\d+(\.\d+)?)\s*(months?|mos?|yrs?|years?)/i;
+
+  const rangeMatch = input.match(rangeRegex);
+  if (rangeMatch) {
+    const a = Number(rangeMatch[1]);
+    const unitA = rangeMatch[3];
+    const b = Number(rangeMatch[4]);
+    const unitB = rangeMatch[6];
+
+    const aYears = unitA.startsWith('mo') ? monthsToYears(a) : a;
+    const bYears = unitB.startsWith('mo') ? monthsToYears(b) : b;
+
+    return {
+      minYears: Math.min(aYears, bYears),
+      maxYears: Math.max(aYears, bYears),
+    };
+  }
+
+  // "Ages 3 to 5" or "3 to 5"
+  const agesToRegex = /ages?\s*(\d+(\.\d+)?)\s*(?:to|-|–|—)\s*(\d+(\.\d+)?)/i;
+  const agesToMatch = input.match(agesToRegex);
+  if (agesToMatch) {
+    const a = Number(agesToMatch[1]);
+    const b = Number(agesToMatch[3]);
+    return { minYears: Math.min(a, b), maxYears: Math.max(a, b) };
+  }
+
+  // "3+" or "6 and up"
+  const plusRegex = /(\d+(\.\d+)?)\s*(?:\+|\s*and up)/i;
+  const plusMatch = input.match(plusRegex);
+  if (plusMatch) {
+    const a = Number(plusMatch[1]);
+    return { minYears: a, maxYears: 12 };
+  }
+
+  // Single months: "12 months" / "18 mos"
+  const singleMonthsRegex = /(\d+(\.\d+)?)\s*(months?|mos?)/i;
+  const singleMonthsMatch = input.match(singleMonthsRegex);
+  if (singleMonthsMatch) {
+    const m = Number(singleMonthsMatch[1]);
+    const y = monthsToYears(m);
+    return { minYears: y, maxYears: y };
+  }
+
+  // Single numeric fallback (only if exactly one number is present)
+  const nums = input.match(/\d+(\.\d+)?/g);
+  if (nums && nums.length === 1) {
+    const a = Number(nums[0]);
+    return { minYears: a, maxYears: a };
+  }
+
+  return null;
+}
+
+/**
+ * Choose best matching Book Nest age category based on overlap.
+ * Categories:
+ * - Hatchlings: 0–2
+ * - Fledglings: 3–5
+ * - Soarers: 6–8
+ * - Sky Readers: 9–12
+ */
+function matchBookNestAgeCategory(minYears: number, maxYears: number): {
+  key: 'hatchlings' | 'fledglings' | 'soarers' | 'sky_readers';
+  label: string;
+} {
+  const categories: Array<{
+    key: 'hatchlings' | 'fledglings' | 'soarers' | 'sky_readers';
+    min: number;
+    max: number;
+  }> = [
+    { key: 'hatchlings', min: 0, max: 2 },
+    { key: 'fledglings', min: 3, max: 5 },
+    { key: 'soarers', min: 6, max: 8 },
+    { key: 'sky_readers', min: 9, max: 12 },
+  ];
+
+  const overlap = (aMin: number, aMax: number, bMin: number, bMax: number) => {
+    const lo = Math.max(aMin, bMin);
+    const hi = Math.min(aMax, bMax);
+    return Math.max(0, hi - lo);
+  };
+
+  let best = categories[0];
+  let bestScore = -1;
+
+  for (const c of categories) {
+    const score = overlap(minYears, maxYears, c.min, c.max);
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+      continue;
+    }
+
+    // Tie-break: midpoint closeness
+    if (score === bestScore) {
+      const inputMid = (minYears + maxYears) / 2;
+      const cMid = (c.min + c.max) / 2;
+      const bestMid = (best.min + best.max) / 2;
+
+      const dist = Math.abs(cMid - inputMid);
+      const bestDist = Math.abs(bestMid - inputMid);
+      if (dist < bestDist) best = c;
+    }
+  }
+
+  return { key: best.key, label: AGE_GROUP_LABELS[best.key] };
+}
+
 export default function ReceivePage() {
   const [isbnInput, setIsbnInput] = useState('');
   const [bookData, setBookData] = useState<BookData | null>(null);
@@ -70,6 +197,9 @@ export default function ReceivePage() {
   } | null>(null);
   const [isFetchingBinHelp, setIsFetchingBinHelp] = useState(false);
   const [showBinHelp, setShowBinHelp] = useState(false);
+
+  // Amazon age prompt result (tiny confirmation line)
+  const [amazonAgeResult, setAmazonAgeResult] = useState<string | null>(null);
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -109,7 +239,7 @@ export default function ReceivePage() {
     if (!stillValid) setBin('');
   }, [ageGroup, filteredBins, bin]);
 
-  // When bin changes, fetch the "best for" tags so you can quickly confirm
+  // When bin changes, fetch tags for quick confirm
   useEffect(() => {
     const loadBinHelp = async () => {
       if (!bin) {
@@ -134,7 +264,7 @@ export default function ReceivePage() {
         } else {
           setBinHelp(null);
         }
-      } catch (e) {
+      } catch {
         setBinHelp(null);
       } finally {
         setIsFetchingBinHelp(false);
@@ -153,13 +283,8 @@ export default function ReceivePage() {
     try {
       const response = await fetch('/api/suggest-bin', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ageGroup: selectedAgeGroup,
-          theme: selectedTheme,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ageGroup: selectedAgeGroup, theme: selectedTheme }),
       });
 
       if (response.ok) {
@@ -176,7 +301,7 @@ export default function ReceivePage() {
     }
   };
 
-  const fetchAgeAndThemeSuggestion = async (bookData: BookData) => {
+  const fetchAgeAndThemeSuggestion = async (book: BookData) => {
     setIsSuggesting(true);
     setAgeSuggestion(null);
     setThemeSuggestion(null);
@@ -184,18 +309,17 @@ export default function ReceivePage() {
     try {
       const response = await fetch('/api/suggest-age-theme', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: bookData.title,
-          author: bookData.author,
-          isbn: bookData.isbn,
+          title: book.title,
+          author: book.author,
+          isbn: book.isbn,
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
+
         if (data.ageGroup) {
           setAgeSuggestion({
             category: data.ageGroup,
@@ -203,6 +327,7 @@ export default function ReceivePage() {
           });
           setAgeGroup(data.ageGroup);
         }
+
         if (data.theme) {
           setThemeSuggestion({
             theme: data.theme,
@@ -210,7 +335,6 @@ export default function ReceivePage() {
           });
           setTheme(data.theme);
 
-          // Now fetch bin suggestion with both age and theme
           if (data.ageGroup) {
             fetchBinSuggestion(data.ageGroup, data.theme);
           }
@@ -238,6 +362,7 @@ export default function ReceivePage() {
     setAgeSuggestion(null);
     setThemeSuggestion(null);
     setBinSuggestion(null);
+    setAmazonAgeResult(null);
 
     try {
       const response = await fetch(`/api/books?isbn=${encodeURIComponent(isbnInput.trim())}`);
@@ -250,13 +375,11 @@ export default function ReceivePage() {
       const data = await response.json();
       setBookData(data);
 
-      // Reset form fields
       setAgeGroup('');
       setBin('');
       setTheme(null);
       setIsManualEntry(false);
 
-      // Automatically fetch age and theme suggestions
       fetchAgeAndThemeSuggestion(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch book data');
@@ -267,7 +390,6 @@ export default function ReceivePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!bookData) return;
 
     if (!ageGroup) {
@@ -275,7 +397,6 @@ export default function ReceivePage() {
       return;
     }
 
-    // Validate title and author for manual entry
     if (isManualEntry && (!bookData.title || !bookData.author)) {
       setError('Please enter title and author');
       return;
@@ -315,11 +436,12 @@ export default function ReceivePage() {
           setThemeSuggestion(null);
           setBinSuggestion(null);
           setIsManualEntry(false);
+          setAmazonAgeResult(null);
         }, 2000);
       } else {
         setError(result.error || 'Failed to receive book');
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred');
     } finally {
       setIsSubmitting(false);
@@ -338,6 +460,7 @@ export default function ReceivePage() {
     setThemeSuggestion(null);
     setBinSuggestion(null);
     setIsManualEntry(false);
+    setAmazonAgeResult(null);
   };
 
   const handleManualEntry = () => {
@@ -349,6 +472,30 @@ export default function ReceivePage() {
       author: '',
       coverUrl: null,
     });
+  };
+
+  const handleAmazonAgePrompt = () => {
+    const pasted = window.prompt(
+      'Paste Amazon age range (examples: "4-8 years", "3+", "12 months - 2 years"):',
+      ''
+    );
+
+    if (pasted === null) return; // cancelled
+    const parsed = parseAmazonAgeRange(pasted);
+
+    if (!parsed) {
+      window.alert('Could not read that age range. Try: "4-8 years", "3+", "12 months - 2 years".');
+      return;
+    }
+
+    const matched = matchBookNestAgeCategory(parsed.minYears, parsed.maxYears);
+    setAgeGroup(matched.key);
+    setAmazonAgeResult(
+      `Matched ${parsed.minYears.toFixed(1)}–${parsed.maxYears.toFixed(1)} yrs → ${matched.label}`
+    );
+
+    // refresh bin suggestion using current theme
+    fetchBinSuggestion(matched.key, theme);
   };
 
   return (
@@ -411,7 +558,6 @@ export default function ReceivePage() {
         </div>
       </header>
 
-      {/* Success Message */}
       {successMessage && (
         <div
           style={{
@@ -430,7 +576,6 @@ export default function ReceivePage() {
         </div>
       )}
 
-      {/* Error Message */}
       {error && (
         <div>
           <div
@@ -448,7 +593,6 @@ export default function ReceivePage() {
             {error}
           </div>
 
-          {/* Manual Entry Button */}
           <button
             onClick={handleManualEntry}
             style={{
@@ -470,7 +614,6 @@ export default function ReceivePage() {
         </div>
       )}
 
-      {/* ISBN Scan Form */}
       {!bookData && (
         <form onSubmit={handleIsbnScan}>
           <div
@@ -538,7 +681,6 @@ export default function ReceivePage() {
         </form>
       )}
 
-      {/* Book Details & Receiving Form */}
       {bookData && (
         <form onSubmit={handleSubmit}>
           {/* Book Info Display */}
@@ -552,7 +694,6 @@ export default function ReceivePage() {
             }}
           >
             {isManualEntry ? (
-              /* Manual Entry Fields */
               <div style={{ marginBottom: spacing.lg }}>
                 <div style={{ marginBottom: spacing.lg }}>
                   <label
@@ -621,7 +762,6 @@ export default function ReceivePage() {
                 </div>
               </div>
             ) : (
-              /* Display Book Info */
               <div style={{ display: 'flex', gap: spacing.xl, marginBottom: spacing.lg }}>
                 <div
                   style={{
@@ -644,11 +784,7 @@ export default function ReceivePage() {
                     <img
                       src={bookData.coverUrl}
                       alt={bookData.title}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   ) : (
                     'No Cover'
@@ -743,23 +879,68 @@ export default function ReceivePage() {
               Receiving Details
             </h3>
 
-            {/* Age Group with Suggestion */}
+            {/* Age Group */}
             <div style={{ marginBottom: spacing.lg }}>
-              <label
+              <div
                 style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.textLight,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   marginBottom: spacing.sm,
+                  gap: spacing.md,
                 }}
               >
-                Age Group *
-              </label>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.textLight,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    margin: 0,
+                  }}
+                >
+                  Age Group *
+                </label>
 
-              {/* Suggestion Loading */}
+                <button
+                  type="button"
+                  onClick={handleAmazonAgePrompt}
+                  style={{
+                    padding: `${spacing.xs} ${spacing.sm}`,
+                    borderRadius: radii.md,
+                    border: `2px solid ${colors.border}`,
+                    backgroundColor: colors.surface,
+                    color: colors.text,
+                    fontSize: typography.fontSize.xs,
+                    fontWeight: typography.fontWeight.semibold,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title='Paste the Amazon "Reading age" or "Age range" and I’ll match it to your categories'
+                >
+                  🧩 Amazon age match
+                </button>
+              </div>
+
+              {amazonAgeResult && (
+                <div
+                  style={{
+                    padding: spacing.sm,
+                    backgroundColor: colors.sageMist,
+                    border: `2px solid ${colors.deepTeal}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.deepCocoa,
+                  }}
+                >
+                  ✅ {amazonAgeResult}
+                </div>
+              )}
+
               {isSuggesting && (
                 <div
                   style={{
@@ -776,7 +957,6 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              {/* Age Suggestion Result */}
               {ageSuggestion && (
                 <div
                   style={{
@@ -797,12 +977,7 @@ export default function ReceivePage() {
                   >
                     💡 Suggested: {AGE_GROUP_LABELS[ageSuggestion.category]}
                   </div>
-                  <div
-                    style={{
-                      fontSize: typography.fontSize.xs,
-                      color: colors.deepCocoa,
-                    }}
-                  >
+                  <div style={{ fontSize: typography.fontSize.xs, color: colors.deepCocoa }}>
                     {ageSuggestion.explanation}
                   </div>
                 </div>
@@ -812,10 +987,8 @@ export default function ReceivePage() {
                 value={ageGroup}
                 onChange={(e) => {
                   setAgeGroup(e.target.value);
-                  // Fetch bin when age group changes
-                  if (e.target.value) {
-                    fetchBinSuggestion(e.target.value, theme);
-                  }
+                  setAmazonAgeResult(null);
+                  if (e.target.value) fetchBinSuggestion(e.target.value, theme);
                 }}
                 required
                 style={{
@@ -909,13 +1082,7 @@ export default function ReceivePage() {
                       Loading tags...
                     </div>
                   ) : binHelp?.bestFor?.length ? (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: spacing.xs,
-                      }}
-                    >
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
                       {binHelp.bestFor.map((t) => (
                         <span
                           key={t}
@@ -941,7 +1108,6 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              {/* Bin Suggestion Loading */}
               {isFetchingBin && (
                 <div
                   style={{
@@ -958,7 +1124,6 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              {/* Bin Suggestion */}
               {binSuggestion && (
                 <div
                   style={{
@@ -976,7 +1141,7 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              {/* Theme Suggestion (moved under Bin Location) */}
+              {/* Theme Suggestion (under Bin Location) */}
               {themeSuggestion && (
                 <div
                   style={{
@@ -998,12 +1163,7 @@ export default function ReceivePage() {
                     🏷️ Theme:{' '}
                     {themeSuggestion.theme.charAt(0).toUpperCase() + themeSuggestion.theme.slice(1)}
                   </div>
-                  <div
-                    style={{
-                      fontSize: typography.fontSize.xs,
-                      color: colors.deepCocoa,
-                    }}
-                  >
+                  <div style={{ fontSize: typography.fontSize.xs, color: colors.deepCocoa }}>
                     {themeSuggestion.explanation}
                   </div>
                 </div>
@@ -1036,7 +1196,6 @@ export default function ReceivePage() {
             </div>
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isSubmitting || !ageGroup}
