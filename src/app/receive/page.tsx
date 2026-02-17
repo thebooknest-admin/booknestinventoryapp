@@ -61,6 +61,16 @@ export default function ReceivePage() {
   const [binSuggestion, setBinSuggestion] = useState<string | null>(null);
   const [isFetchingBin, setIsFetchingBin] = useState(false);
 
+  // Bin help (info tooltip) state
+  const [binHelp, setBinHelp] = useState<{
+    binCode: string;
+    binTheme: string;
+    bestFor: string[];
+    message: string;
+  } | null>(null);
+  const [isFetchingBinHelp, setIsFetchingBinHelp] = useState(false);
+  const [showBinHelp, setShowBinHelp] = useState(false);
+
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -98,6 +108,41 @@ export default function ReceivePage() {
     const stillValid = filteredBins.some((b) => b.bin_code === bin);
     if (!stillValid) setBin('');
   }, [ageGroup, filteredBins, bin]);
+
+  // When bin changes, fetch the "best for" tags so you can quickly confirm
+  useEffect(() => {
+    const loadBinHelp = async () => {
+      if (!bin) {
+        setBinHelp(null);
+        setShowBinHelp(false);
+        return;
+      }
+
+      setIsFetchingBinHelp(true);
+      try {
+        const res = await fetch(`/api/bin-help?binCode=${encodeURIComponent(bin)}`, {
+          cache: 'no-store',
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setBinHelp({
+            binCode: data.binCode || bin,
+            binTheme: data.binTheme || '',
+            bestFor: Array.isArray(data.bestFor) ? data.bestFor : [],
+            message: data.message || '',
+          });
+        } else {
+          setBinHelp(null);
+        }
+      } catch (e) {
+        setBinHelp(null);
+      } finally {
+        setIsFetchingBinHelp(false);
+      }
+    };
+
+    loadBinHelp();
+  }, [bin]);
 
   const fetchBinSuggestion = async (selectedAgeGroup: string, selectedTheme: string | null = null) => {
     if (!selectedAgeGroup) return;
@@ -521,63 +566,28 @@ export default function ReceivePage() {
                       marginBottom: spacing.sm,
                     }}
                   >
-                    ISBN
-                  </label>
-                  <input
-                    type="text"
-                    value={bookData.isbn}
-                    onChange={(e) => setBookData({ ...bookData, isbn: e.target.value })}
-                    placeholder="Enter ISBN"
-                    style={{
-                      width: '100%',
-                      padding: spacing.md,
-                      fontSize: typography.fontSize.base,
-                      color: colors.text,
-                      backgroundColor: colors.cream,
-                      border: `3px solid ${colors.border}`,
-                      borderRadius: radii.md,
-                      fontFamily: 'monospace',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: spacing.lg }}>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontSize: typography.fontSize.sm,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.textLight,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      marginBottom: spacing.sm,
-                    }}
-                  >
                     Title *
                   </label>
                   <input
                     type="text"
                     value={bookData.title}
                     onChange={(e) => setBookData({ ...bookData, title: e.target.value })}
-                    placeholder="Enter book title"
-                    required
+                    placeholder="Enter book title..."
                     style={{
                       width: '100%',
                       padding: spacing.md,
                       fontSize: typography.fontSize.lg,
-                      fontWeight: typography.fontWeight.bold,
+                      fontWeight: typography.fontWeight.semibold,
                       color: colors.text,
                       backgroundColor: colors.cream,
                       border: `3px solid ${colors.border}`,
                       borderRadius: radii.md,
-                      fontFamily: typography.fontFamily.body,
                       boxSizing: 'border-box',
                     }}
                   />
                 </div>
 
-                <div style={{ marginBottom: spacing.lg }}>
+                <div style={{ marginBottom: 0 }}>
                   <label
                     style={{
                       display: 'block',
@@ -595,135 +605,120 @@ export default function ReceivePage() {
                     type="text"
                     value={bookData.author}
                     onChange={(e) => setBookData({ ...bookData, author: e.target.value })}
-                    placeholder="Enter author name"
-                    required
+                    placeholder="Enter author name..."
                     style={{
                       width: '100%',
                       padding: spacing.md,
-                      fontSize: typography.fontSize.base,
+                      fontSize: typography.fontSize.lg,
+                      fontWeight: typography.fontWeight.semibold,
                       color: colors.text,
                       backgroundColor: colors.cream,
                       border: `3px solid ${colors.border}`,
                       borderRadius: radii.md,
-                      fontFamily: typography.fontFamily.body,
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: spacing.lg }}>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontSize: typography.fontSize.sm,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.textLight,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      marginBottom: spacing.sm,
-                    }}
-                  >
-                    Cover Image URL (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={bookData.coverUrl || ''}
-                    onChange={(e) => setBookData({ ...bookData, coverUrl: e.target.value || null })}
-                    placeholder="https://example.com/cover.jpg"
-                    style={{
-                      width: '100%',
-                      padding: spacing.md,
-                      fontSize: typography.fontSize.sm,
-                      color: colors.text,
-                      backgroundColor: colors.cream,
-                      border: `3px solid ${colors.border}`,
-                      borderRadius: radii.md,
-                      fontFamily: 'monospace',
                       boxSizing: 'border-box',
                     }}
                   />
                 </div>
               </div>
             ) : (
-              /* Auto-fetched Book Display */
-              <div>
+              /* Display Book Info */
+              <div style={{ display: 'flex', gap: spacing.xl, marginBottom: spacing.lg }}>
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: bookData.coverUrl ? '150px 1fr' : '1fr',
-                    gap: spacing.lg,
-                    marginBottom: spacing.lg,
+                    width: '120px',
+                    height: '160px',
+                    backgroundColor: colors.cream,
+                    border: `2px solid ${colors.border}`,
+                    borderRadius: radii.sm,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: typography.fontSize.xs,
+                    color: colors.textLight,
+                    flexShrink: 0,
+                    overflow: 'hidden',
                   }}
                 >
-                  {bookData.coverUrl && (
+                  {bookData.coverUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={bookData.coverUrl}
                       alt={bookData.title}
                       style={{
-                        width: '150px',
-                        height: 'auto',
-                        border: `2px solid ${colors.border}`,
-                        borderRadius: radii.sm,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
                       }}
                     />
+                  ) : (
+                    'No Cover'
                   )}
-                  <div>
-                    <h2
-                      style={{
-                        fontSize: typography.fontSize.xl,
-                        fontWeight: typography.fontWeight.bold,
-                        color: colors.text,
-                        margin: 0,
-                        marginBottom: spacing.xs,
-                      }}
-                    >
-                      {bookData.title}
-                    </h2>
-                    <p
-                      style={{
-                        fontSize: typography.fontSize.lg,
-                        color: colors.textLight,
-                        margin: 0,
-                        marginBottom: spacing.sm,
-                      }}
-                    >
-                      {bookData.author}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: typography.fontSize.sm,
-                        color: colors.textLight,
-                        fontFamily: 'monospace',
-                        margin: 0,
-                      }}
-                    >
-                      ISBN: {bookData.isbn}
-                    </p>
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <h2
+                    style={{
+                      fontFamily: typography.fontFamily.heading,
+                      fontSize: typography.fontSize['2xl'],
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.text,
+                      margin: 0,
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    {bookData.title}
+                  </h2>
+                  <p
+                    style={{
+                      fontSize: typography.fontSize.lg,
+                      color: colors.textLight,
+                      margin: 0,
+                      marginBottom: spacing.md,
+                    }}
+                  >
+                    by {bookData.author}
+                  </p>
+                  <div
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: typography.fontSize.base,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.text,
+                      backgroundColor: colors.cream,
+                      padding: spacing.sm,
+                      borderRadius: radii.sm,
+                      border: `2px solid ${colors.border}`,
+                      display: 'inline-block',
+                    }}
+                  >
+                    ISBN: {bookData.isbn}
                   </div>
                 </div>
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={handleNewScan}
-              style={{
-                padding: `${spacing.sm} ${spacing.md}`,
-                backgroundColor: colors.surface,
-                color: colors.textLight,
-                border: `2px solid ${colors.border}`,
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.semibold,
-                textTransform: 'uppercase',
-                borderRadius: radii.sm,
-                cursor: 'pointer',
-              }}
-            >
-              Different Book
-            </button>
+            <div style={{ display: 'flex', gap: spacing.md }}>
+              <button
+                type="button"
+                onClick={handleNewScan}
+                style={{
+                  flex: 1,
+                  padding: spacing.md,
+                  backgroundColor: colors.surface,
+                  color: colors.text,
+                  border: `2px solid ${colors.border}`,
+                  fontSize: typography.fontSize.base,
+                  fontWeight: typography.fontWeight.semibold,
+                  borderRadius: radii.sm,
+                  cursor: 'pointer',
+                }}
+              >
+                🔄 New Scan
+              </button>
+            </div>
           </div>
 
-          {/* Receiving Details Form */}
+          {/* Receiving Details */}
           <div
             style={{
               backgroundColor: colors.surface,
@@ -735,7 +730,8 @@ export default function ReceivePage() {
           >
             <h3
               style={{
-                fontSize: typography.fontSize.lg,
+                fontFamily: typography.fontFamily.heading,
+                fontSize: typography.fontSize.xl,
                 fontWeight: typography.fontWeight.bold,
                 color: colors.text,
                 textTransform: 'uppercase',
@@ -812,39 +808,6 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              {/* Theme Suggestion */}
-              {themeSuggestion && (
-                <div
-                  style={{
-                    padding: spacing.md,
-                    backgroundColor: colors.goldenHoney,
-                    border: `2px solid ${colors.mustardOchre}`,
-                    borderRadius: radii.sm,
-                    marginBottom: spacing.sm,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: typography.fontSize.sm,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.deepCocoa,
-                      marginBottom: spacing.xs,
-                    }}
-                  >
-                    🏷️ Theme:{' '}
-                    {themeSuggestion.theme.charAt(0).toUpperCase() + themeSuggestion.theme.slice(1)}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: typography.fontSize.xs,
-                      color: colors.deepCocoa,
-                    }}
-                  >
-                    {themeSuggestion.explanation}
-                  </div>
-                </div>
-              )}
-
               <select
                 value={ageGroup}
                 onChange={(e) => {
@@ -878,19 +841,105 @@ export default function ReceivePage() {
 
             {/* Bin Location */}
             <div style={{ marginBottom: 0 }}>
-              <label
+              <div
                 style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.textLight,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   marginBottom: spacing.sm,
                 }}
               >
-                Bin Location
-              </label>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.textLight,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    margin: 0,
+                  }}
+                >
+                  Bin Location
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBinHelp((s) => !s)}
+                  disabled={!bin || isFetchingBinHelp}
+                  title={!bin ? 'Select a bin to view tags' : 'View tags for this bin'}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    border: `2px solid ${colors.border}`,
+                    backgroundColor: !bin ? colors.border : colors.surface,
+                    color: colors.text,
+                    fontWeight: typography.fontWeight.bold,
+                    cursor: !bin ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  i
+                </button>
+              </div>
+
+              {showBinHelp && (
+                <div
+                  style={{
+                    padding: spacing.md,
+                    backgroundColor: colors.cream,
+                    border: `2px solid ${colors.border}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.deepCocoa,
+                      marginBottom: spacing.xs,
+                    }}
+                  >
+                    🧷 Bin tags for {bin}
+                  </div>
+
+                  {isFetchingBinHelp ? (
+                    <div style={{ fontSize: typography.fontSize.sm, color: colors.textLight }}>
+                      Loading tags...
+                    </div>
+                  ) : binHelp?.bestFor?.length ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: spacing.xs,
+                      }}
+                    >
+                      {binHelp.bestFor.map((t) => (
+                        <span
+                          key={t}
+                          style={{
+                            padding: `${spacing.xs} ${spacing.sm}`,
+                            borderRadius: radii.md,
+                            border: `1px solid ${colors.border}`,
+                            backgroundColor: colors.surface,
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.semibold,
+                            color: colors.text,
+                          }}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: typography.fontSize.sm, color: colors.textLight }}>
+                      No tags found for this bin.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Bin Suggestion Loading */}
               {isFetchingBin && (
@@ -927,6 +976,39 @@ export default function ReceivePage() {
                 </div>
               )}
 
+              {/* Theme Suggestion (moved under Bin Location) */}
+              {themeSuggestion && (
+                <div
+                  style={{
+                    padding: spacing.md,
+                    backgroundColor: colors.goldenHoney,
+                    border: `2px solid ${colors.mustardOchre}`,
+                    borderRadius: radii.sm,
+                    marginBottom: spacing.sm,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.deepCocoa,
+                      marginBottom: spacing.xs,
+                    }}
+                  >
+                    🏷️ Theme:{' '}
+                    {themeSuggestion.theme.charAt(0).toUpperCase() + themeSuggestion.theme.slice(1)}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xs,
+                      color: colors.deepCocoa,
+                    }}
+                  >
+                    {themeSuggestion.explanation}
+                  </div>
+                </div>
+              )}
+
               <select
                 value={bin}
                 onChange={(e) => setBin(e.target.value)}
@@ -946,7 +1028,8 @@ export default function ReceivePage() {
                 <option value="">Select bin location...</option>
                 {filteredBins.map((b) => (
                   <option key={b.bin_code} value={b.bin_code}>
-                    {b.bin_code}{b.display_name ? ` — ${b.display_name}` : ''}
+                    {b.bin_code}
+                    {b.display_name ? ` — ${b.display_name}` : ''}
                   </option>
                 ))}
               </select>
