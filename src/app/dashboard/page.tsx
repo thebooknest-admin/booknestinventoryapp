@@ -1218,59 +1218,120 @@ export default function Dashboard() {
               maxHeight: '90vh',
               overflowY: 'auto',
               zIndex: 1001,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: spacing.lg,
             }}
           >
-            <h2
-              style={{
-                fontFamily: typography.fontFamily.heading,
-                fontSize: typography.fontSize['2xl'],
-                fontWeight: typography.fontWeight.bold,
-                color: colors.primary,
-                margin: 0,
-                marginBottom: spacing.lg,
-              }}
-            >
-              Edit Book Copy
-            </h2>
-
+            {/* Header + quick actions */}
             <div
               style={{
-                marginBottom: spacing.lg,
-                paddingBottom: spacing.lg,
-                borderBottom: `2px solid ${colors.border}`,
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: spacing.md,
               }}
             >
-              <div style={{ marginBottom: spacing.sm }}>
-                <span
+              <div>
+                <h2
                   style={{
-                    fontSize: typography.fontSize.sm,
+                    fontFamily: typography.fontFamily.heading,
+                    fontSize: typography.fontSize['2xl'],
                     fontWeight: typography.fontWeight.bold,
+                    color: colors.primary,
+                    margin: 0,
+                    marginBottom: spacing.sm,
+                  }}
+                >
+                  Edit Book Copy
+                </h2>
+
+                <div
+                  style={{
+                    marginBottom: spacing.sm,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.textLight,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    SKU:{' '}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: typography.fontSize.lg,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.text,
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {selectedItem.sku}
+                  </span>
+                </div>
+
+                <p
+                  style={{
+                    marginTop: 0,
+                    fontSize: typography.fontSize.xs,
                     color: colors.textLight,
-                    textTransform: 'uppercase',
                   }}
                 >
-                  SKU:{' '}
-                </span>
-                <span
-                  style={{
-                    fontSize: typography.fontSize.lg,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.text,
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  {selectedItem.sku}
-                </span>
+                  Changes here affect <strong>this copy</strong> only.
+                </p>
               </div>
-              <p
+
+              {/* Top-right quick actions */}
+              <div
                 style={{
-                  marginTop: spacing.sm,
-                  fontSize: typography.fontSize.xs,
-                  color: colors.textLight,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: spacing.sm,
+                  alignItems: 'flex-end',
                 }}
               >
-                Changes here affect this copy record only.
-              </p>
+                <button
+                  onClick={handleCloseModal}
+                  disabled={isSaving}
+                  style={{
+                    padding: `${spacing.xs} ${spacing.md}`,
+                    backgroundColor: colors.surface,
+                    color: colors.textLight,
+                    border: `1px solid ${colors.border}`,
+                    fontSize: typography.fontSize.xs,
+                    fontWeight: typography.fontWeight.semibold,
+                    textTransform: 'uppercase',
+                    borderRadius: radii.sm,
+                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                    opacity: isSaving ? 0.6 : 1,
+                  }}
+                >
+                  Close
+                </button>
+
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  style={{
+                    padding: `${spacing.xs} ${spacing.md}`,
+                    backgroundColor: isSaving ? colors.border : colors.primary,
+                    color: isSaving ? colors.textLight : colors.cream,
+                    border: `1px solid ${
+                      isSaving ? colors.border : colors.primary
+                    }`,
+                    fontSize: typography.fontSize.xs,
+                    fontWeight: typography.fontWeight.bold,
+                    textTransform: 'uppercase',
+                    borderRadius: radii.sm,
+                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
 
             {saveError && (
@@ -1289,7 +1350,27 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div style={{ marginBottom: spacing.xl }}>
+            {/* Book details section */}
+            <div
+              style={{
+                marginBottom: spacing.lg,
+                paddingBottom: spacing.lg,
+                borderBottom: `2px solid ${colors.border}`,
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: typography.fontSize.sm,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  color: colors.textLight,
+                  margin: 0,
+                  marginBottom: spacing.md,
+                }}
+              >
+                Book details
+              </h3>
+
               {/* ISBN */}
               <div style={{ marginBottom: spacing.lg }}>
                 <label
@@ -1432,7 +1513,6 @@ export default function Dashboard() {
                     boxSizing: 'border-box',
                   }}
                 />
-                {/* Cover Preview */}
                 {editForm.coverUrl && (
                   <div style={{ marginTop: spacing.sm }}>
                     <img
@@ -1451,6 +1531,22 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Ops details section */}
+            <div style={{ marginBottom: spacing.lg }}>
+              <h3
+                style={{
+                  fontSize: typography.fontSize.sm,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  color: colors.textLight,
+                  margin: 0,
+                  marginBottom: spacing.md,
+                }}
+              >
+                Ops details
+              </h3>
 
               {/* Age Group */}
               <div style={{ marginBottom: spacing.lg }}>
@@ -1523,8 +1619,8 @@ export default function Dashboard() {
                     fontSize: typography.fontSize.lg,
                     fontWeight: typography.fontWeight.bold,
                     color: colors.text,
-                    backgroundColor: colors.cream,
-                    border: `2px solid ${colors.border}`,
+                    backgroundColor: '#fffef6',
+                    border: `2px solid ${colors.primary}`,
                     borderRadius: radii.md,
                     fontFamily: 'monospace',
                     boxSizing: 'border-box',
@@ -1533,7 +1629,7 @@ export default function Dashboard() {
               </div>
 
               {/* Status */}
-              <div style={{ marginBottom: 0 }}>
+              <div style={{ marginBottom: spacing.sm }}>
                 <label
                   style={{
                     display: 'block',
@@ -1574,15 +1670,40 @@ export default function Dashboard() {
                   <option value="damaged">Damaged</option>
                   <option value="retired">Retired</option>
                 </select>
+
+                {/* Status hints */}
+                {editForm.status === 'damaged' && (
+                  <p
+                    style={{
+                      marginTop: spacing.xs,
+                      fontSize: typography.fontSize.xs,
+                      color: colors.textLight,
+                    }}
+                  >
+                    Damaged copies will stay out of member shipments.
+                  </p>
+                )}
+                {editForm.status === 'retired' && (
+                  <p
+                    style={{
+                      marginTop: spacing.xs,
+                      fontSize: typography.fontSize.xs,
+                      color: colors.textLight,
+                    }}
+                  >
+                    Retired copies are hidden from active inventory views.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Modal Actions */}
+            {/* Bottom Actions */}
             <div
               style={{
                 display: 'flex',
                 gap: spacing.md,
                 justifyContent: 'flex-end',
+                marginTop: 'auto',
               }}
             >
               <button
