@@ -87,41 +87,58 @@ export default function Dashboard() {
     completedToday: 0,
   });
 
-  // Load inventory
+  // Derived: are filters active?
+  const filtersActive =
+    !!searchQuery || statusFilter !== 'all' || ageGroupFilter !== 'all';
+
+  // Load inventory + stats
   useEffect(() => {
     loadInventoryAndStats();
   }, []);
 
   async function loadInventoryAndStats() {
-  setIsLoading(true);
+    setIsLoading(true);
 
-  try {
-    // Fetch inventory and stats in parallel
-    const [inventoryResult, statsResult] = await Promise.all([
-      getInventory(),
-      getQueueStats()
-    ]);
+    try {
+      // Fetch inventory and stats in parallel
+      const [inventoryResult, statsResult] = await Promise.all([
+        getInventory(),
+        getQueueStats(),
+      ]);
 
-    if (inventoryResult.success && inventoryResult.inventory) {
-      const activeInventory = inventoryResult.inventory.filter((item) => item.status !== 'retired');
-      setInventory(activeInventory);
-      setFilteredInventory(activeInventory);
+      if (inventoryResult.success && inventoryResult.inventory) {
+        // Keep all inventory here, including retired; filtering logic handles visibility
+        const allInventory = inventoryResult.inventory;
+        setInventory(allInventory);
+        setFilteredInventory(allInventory);
+      }
+
+      if (statsResult.success && statsResult.stats) {
+        setStats(statsResult.stats);
+      }
+    } catch (err) {
+      console.error('Failed to load inventory:', err);
+    } finally {
+      setIsLoading(false);
     }
-
-    if (statsResult.success && statsResult.stats) {
-      setStats(statsResult.stats);
-    }
-  } catch (err) {
-    console.error('Failed to load inventory:', err);
-  } finally {
-    setIsLoading(false);
   }
-}
 
   // Apply filters and sorting
   useEffect(() => {
-    // Start with inventory, excluding retired books
-    let filtered = inventory.filter((item) => item.status !== 'retired');
+    let filtered = [...inventory];
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((item) => item.status === statusFilter);
+    } else {
+      // When status = all, hide retired by default
+      filtered = filtered.filter((item) => item.status !== 'retired');
+    }
+
+    // Age group filter
+    if (ageGroupFilter !== 'all') {
+      filtered = filtered.filter((item) => item.ageGroup === ageGroupFilter);
+    }
 
     // Search filter
     if (searchQuery) {
@@ -134,16 +151,6 @@ export default function Dashboard() {
           item.isbn?.toLowerCase().includes(query) ||
           item.bin?.toLowerCase().includes(query)
       );
-    }
-
-    // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((item) => item.status === statusFilter);
-    }
-
-    // Age group filter
-    if (ageGroupFilter !== 'all') {
-      filtered = filtered.filter((item) => item.ageGroup === ageGroupFilter);
     }
 
     // Sorting
@@ -161,7 +168,9 @@ export default function Dashboard() {
           comparison = (a.bin || '').localeCompare(b.bin || '');
           break;
         case 'received':
-          comparison = new Date(a.receivedAt || 0).getTime() - new Date(b.receivedAt || 0).getTime();
+          comparison =
+            new Date(a.receivedAt || 0).getTime() -
+            new Date(b.receivedAt || 0).getTime();
           break;
       }
 
@@ -186,7 +195,7 @@ export default function Dashboard() {
     setAgeGroupFilter('all');
   };
 
-  const handleRowClick = (item: InventoryItem) => {
+  const openEditModal = (item: InventoryItem) => {
     setSelectedItem(item);
     setEditForm({
       isbn: item.isbn || '',
@@ -271,7 +280,7 @@ export default function Dashboard() {
             Logistics Dashboard
           </p>
         </div>
-        
+
         {/* Pippa Mascot */}
         <div
           style={{
@@ -428,7 +437,7 @@ export default function Dashboard() {
               letterSpacing: '0.05em',
             }}
           >
-            Total Inventory
+            Total Inventory (visible)
           </div>
         </div>
       </div>
@@ -573,17 +582,42 @@ export default function Dashboard() {
           marginBottom: spacing.xl,
         }}
       >
-        <h2
+        <div
           style={{
-            fontSize: typography.fontSize['2xl'],
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-            margin: 0,
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: spacing.md,
             marginBottom: spacing.lg,
+            flexWrap: 'wrap',
           }}
         >
-          Inventory ({filteredInventory.length} items)
-        </h2>
+          <h2
+            style={{
+              fontSize: typography.fontSize['2xl'],
+              fontWeight: typography.fontWeight.bold,
+              color: colors.text,
+              margin: 0,
+            }}
+          >
+            Inventory ({filteredInventory.length} items)
+          </h2>
+          {filtersActive && (
+            <span
+              style={{
+                fontSize: typography.fontSize.xs,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                padding: `${spacing.xs} ${spacing.sm}`,
+                borderRadius: radii.full,
+                backgroundColor: colors.sageMist,
+                color: colors.deepCocoa,
+                fontWeight: typography.fontWeight.semibold,
+              }}
+            >
+              Filters active
+            </span>
+          )}
+        </div>
 
         <div
           style={{
@@ -616,7 +650,9 @@ export default function Dashboard() {
         <div
           style={{
             backgroundColor: colors.surface,
-            border: `3px solid ${colors.border}`,
+            border: `3px solid ${
+              filtersActive ? colors.primary : colors.border
+            }`,
             borderRadius: radii.md,
             padding: spacing.lg,
             marginBottom: spacing.lg,
@@ -694,7 +730,7 @@ export default function Dashboard() {
                   cursor: 'pointer',
                 }}
               >
-                <option value="all">All Statuses</option>
+                <option value="all">All Active (hides retired)</option>
                 <option value="in_house">In House</option>
                 <option value="picking">Picking</option>
                 <option value="picked">Picked</option>
@@ -903,7 +939,7 @@ export default function Dashboard() {
                         fontWeight: typography.fontWeight.bold,
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
-                        whiteSpace: 'nowrap'
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       Status
@@ -923,23 +959,35 @@ export default function Dashboard() {
                     >
                       Received {sortBy === 'received' && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
+                    <th
+                      style={{
+                        padding: spacing.md,
+                        textAlign: 'left',
+                        fontSize: typography.fontSize.sm,
+                        fontWeight: typography.fontWeight.bold,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventory.map((item, index) => (
                     <tr
                       key={item.id}
-                      onClick={() => handleRowClick(item)}
                       style={{
                         borderBottom: `2px solid ${colors.border}`,
-                        backgroundColor: index % 2 === 0 ? colors.surface : colors.cream,
-                        cursor: 'pointer',
+                        backgroundColor:
+                          index % 2 === 0 ? colors.surface : colors.cream,
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.backgroundColor = colors.peachClay;
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = index % 2 === 0 ? colors.surface : colors.cream;
+                        e.currentTarget.style.backgroundColor =
+                          index % 2 === 0 ? colors.surface : colors.cream;
                       }}
                     >
                       <td
@@ -965,7 +1013,7 @@ export default function Dashboard() {
                             alt={item.title}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEnlargedCover(item.coverUrl);
+                              setEnlargedCover(item.coverUrl!);
                             }}
                             style={{
                               width: '40px',
@@ -1030,7 +1078,9 @@ export default function Dashboard() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {item.ageGroup ? (AGE_GROUP_LABELS[item.ageGroup] || item.ageGroup) : 'N/A'}
+                        {item.ageGroup
+                          ? AGE_GROUP_LABELS[item.ageGroup] || item.ageGroup
+                          : 'N/A'}
                       </td>
                       <td
                         style={{
@@ -1048,7 +1098,9 @@ export default function Dashboard() {
                           style={{
                             display: 'inline-block',
                             padding: `${spacing.xs} ${spacing.sm}`,
-                            backgroundColor: item.status ? (STATUS_COLORS[item.status] || colors.border) : colors.border,
+                            backgroundColor: item.status
+                              ? STATUS_COLORS[item.status] || colors.border
+                              : colors.border,
                             color: colors.deepCocoa,
                             fontSize: typography.fontSize.xs,
                             fontWeight: typography.fontWeight.bold,
@@ -1058,7 +1110,9 @@ export default function Dashboard() {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {item.status ? (STATUS_LABELS[item.status] || item.status) : 'Unknown'}
+                          {item.status
+                            ? STATUS_LABELS[item.status] || item.status
+                            : 'Unknown'}
                         </span>
                       </td>
                       <td
@@ -1069,7 +1123,35 @@ export default function Dashboard() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {item.receivedAt ? new Date(item.receivedAt).toLocaleDateString() : 'N/A'}
+                        {item.receivedAt
+                          ? new Date(item.receivedAt).toLocaleDateString()
+                          : 'N/A'}
+                      </td>
+                      <td
+                        style={{
+                          padding: spacing.md,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(item);
+                          }}
+                          style={{
+                            padding: `${spacing.xs} ${spacing.md}`,
+                            backgroundColor: colors.surface,
+                            color: colors.text,
+                            border: `2px solid ${colors.border}`,
+                            borderRadius: radii.sm,
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.semibold,
+                            textTransform: 'uppercase',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Edit
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -1180,6 +1262,15 @@ export default function Dashboard() {
                   {selectedItem.sku}
                 </span>
               </div>
+              <p
+                style={{
+                  marginTop: spacing.sm,
+                  fontSize: typography.fontSize.xs,
+                  color: colors.textLight,
+                }}
+              >
+                Changes here affect this copy record only.
+              </p>
             </div>
 
             {saveError && (
@@ -1217,7 +1308,9 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={editForm.isbn}
-                  onChange={(e) => setEditForm({ ...editForm, isbn: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, isbn: e.target.value })
+                  }
                   placeholder="ISBN or barcode"
                   style={{
                     width: '100%',
@@ -1251,7 +1344,9 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={editForm.title}
-                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, title: e.target.value })
+                  }
                   placeholder="Book title"
                   style={{
                     width: '100%',
@@ -1285,7 +1380,9 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={editForm.author}
-                  onChange={(e) => setEditForm({ ...editForm, author: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, author: e.target.value })
+                  }
                   placeholder="Author name"
                   style={{
                     width: '100%',
@@ -1319,7 +1416,9 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={editForm.coverUrl}
-                  onChange={(e) => setEditForm({ ...editForm, coverUrl: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, coverUrl: e.target.value })
+                  }
                   placeholder="https://example.com/cover.jpg"
                   style={{
                     width: '100%',
@@ -1370,7 +1469,9 @@ export default function Dashboard() {
                 </label>
                 <select
                   value={editForm.ageGroup}
-                  onChange={(e) => setEditForm({ ...editForm, ageGroup: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, ageGroup: e.target.value })
+                  }
                   style={{
                     width: '100%',
                     padding: spacing.md,
@@ -1409,7 +1510,12 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={editForm.bin}
-                  onChange={(e) => setEditForm({ ...editForm, bin: e.target.value.toUpperCase() })}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      bin: e.target.value.toUpperCase(),
+                    })
+                  }
                   placeholder="e.g., A-12-3"
                   style={{
                     width: '100%',
@@ -1443,7 +1549,9 @@ export default function Dashboard() {
                 </label>
                 <select
                   value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, status: e.target.value })
+                  }
                   style={{
                     width: '100%',
                     padding: spacing.md,
@@ -1503,7 +1611,9 @@ export default function Dashboard() {
                   padding: `${spacing.md} ${spacing.xl}`,
                   backgroundColor: isSaving ? colors.border : colors.primary,
                   color: isSaving ? colors.textLight : colors.cream,
-                  border: `2px solid ${isSaving ? colors.border : colors.primary}`,
+                  border: `2px solid ${
+                    isSaving ? colors.border : colors.primary
+                  }`,
                   fontSize: typography.fontSize.base,
                   fontWeight: typography.fontWeight.bold,
                   textTransform: 'uppercase',
