@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Copy, Info, Sparkles, RotateCcw } from 'lucide-react';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { receiveBook } from '@/app/actions/receive';
 
@@ -34,15 +35,6 @@ function normalizeAgeKey(v: string | null | undefined): string {
   return x;
 }
 
-/**
- * Parse common Amazon-style age range strings into {minYears, maxYears}
- * Examples:
- * - "4-8 years"
- * - "Ages 3 to 5"
- * - "3+"
- * - "12 months - 2 years"
- * - "18-24 months"
- */
 function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: number } | null {
   const input = (inputRaw || '').trim().toLowerCase();
   if (!input) return null;
@@ -92,6 +84,12 @@ function parseAmazonAgeRange(inputRaw: string): { minYears: number; maxYears: nu
   }
 
   const nums = input.match(/\d+(\.\d+)?/g);
+  if (nums && nums.length >= 2) {
+    const a = Number(nums[0]);
+    const b = Number(nums[1]);
+    return { minYears: Math.min(a, b), maxYears: Math.max(a, b) };
+  }
+
   if (nums && nums.length === 1) {
     const a = Number(nums[0]);
     return { minYears: a, maxYears: a };
@@ -154,12 +152,10 @@ export default function ReceivePage() {
   const [error, setError] = useState<string | null>(null);
   const [isManualEntry, setIsManualEntry] = useState(false);
 
-  // Form data
   const [ageGroup, setAgeGroup] = useState('');
   const [bin, setBin] = useState('');
   const [theme, setTheme] = useState<string | null>(null);
 
-  // AI suggestion state
   const [ageSuggestion, setAgeSuggestion] = useState<{
     category: string;
     explanation: string;
@@ -170,11 +166,9 @@ export default function ReceivePage() {
   } | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
 
-  // Bin suggestion state
   const [binSuggestion, setBinSuggestion] = useState<string | null>(null);
   const [isFetchingBin, setIsFetchingBin] = useState(false);
 
-  // Bin help (info tooltip) state
   const [binHelp, setBinHelp] = useState<{
     binCode: string;
     binTheme: string;
@@ -184,17 +178,13 @@ export default function ReceivePage() {
   const [isFetchingBinHelp, setIsFetchingBinHelp] = useState(false);
   const [showBinHelp, setShowBinHelp] = useState(false);
 
-  // Amazon age prompt result (tiny confirmation line)
   const [amazonAgeResult, setAmazonAgeResult] = useState<string | null>(null);
 
-  // ISBN copy UI
   const [isbnCopied, setIsbnCopied] = useState(false);
 
-  // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Bin options
   const [bins, setBins] = useState<BinOption[]>([]);
 
   const filteredBins = useMemo(() => {
@@ -313,7 +303,6 @@ export default function ReceivePage() {
             category: data.ageGroup,
             explanation: data.ageExplanation,
           });
-          setAgeGroup(data.ageGroup);
         }
 
         if (data.theme) {
@@ -322,10 +311,6 @@ export default function ReceivePage() {
             explanation: data.themeExplanation,
           });
           setTheme(data.theme);
-
-          if (data.ageGroup) {
-            fetchBinSuggestion(data.ageGroup, data.theme);
-          }
         }
       }
     } catch (err) {
@@ -412,7 +397,7 @@ export default function ReceivePage() {
       );
 
       if (result.success && result.sku) {
-        setSuccessMessage(`✓ Book received! SKU: ${result.sku}`);
+        setSuccessMessage(`Book received • SKU: ${result.sku}`);
 
         setTimeout(() => {
           setIsbnInput('');
@@ -427,7 +412,7 @@ export default function ReceivePage() {
           setIsManualEntry(false);
           setAmazonAgeResult(null);
           setIsbnCopied(false);
-        }, 2000);
+        }, 1800);
       } else {
         setError(result.error || 'Failed to receive book');
       }
@@ -467,15 +452,17 @@ export default function ReceivePage() {
 
   const handleAmazonAgePrompt = () => {
     const pasted = window.prompt(
-      'Paste Amazon age range (examples: "4-8 years", "3+", "12 months - 2 years"):',
+      'Paste Amazon age range (examples: "4-8 years", "3+", "12 months - 2 years", "7-10"):',
       ''
     );
 
-    if (pasted === null) return; // cancelled
+    if (pasted === null) return;
     const parsed = parseAmazonAgeRange(pasted);
 
     if (!parsed) {
-      window.alert('Could not read that age range. Try: "4-8 years", "3+", "12 months - 2 years".');
+      window.alert(
+        'Could not read that age range. Try: "4-8 years", "3+", "12 months - 2 years", or "7-10".'
+      );
       return;
     }
 
@@ -484,6 +471,11 @@ export default function ReceivePage() {
     setAmazonAgeResult(
       `Matched ${parsed.minYears.toFixed(1)}–${parsed.maxYears.toFixed(1)} yrs → ${matched.label}`
     );
+
+    setAgeSuggestion({
+      category: matched.key,
+      explanation: 'Based on Amazon reading age range.',
+    });
 
     fetchBinSuggestion(matched.key, theme);
   };
@@ -496,7 +488,6 @@ export default function ReceivePage() {
       setIsbnCopied(true);
       window.setTimeout(() => setIsbnCopied(false), 1200);
     } catch {
-      // fallback (older browsers / restricted contexts)
       try {
         const el = document.createElement('textarea');
         el.value = bookData.isbn;
@@ -519,7 +510,7 @@ export default function ReceivePage() {
       style={{
         minHeight: '100vh',
         padding: spacing.xl,
-        maxWidth: '1000px',
+        maxWidth: '1100px',
         margin: '0 auto',
       }}
     >
@@ -528,6 +519,9 @@ export default function ReceivePage() {
           marginBottom: spacing.xl,
           paddingBottom: spacing.lg,
           borderBottom: `3px solid ${colors.primary}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: spacing.sm,
         }}
       >
         <Link
@@ -538,23 +532,34 @@ export default function ReceivePage() {
             textDecoration: 'none',
             fontSize: typography.fontSize.base,
             fontWeight: typography.fontWeight.semibold,
-            marginBottom: spacing.sm,
           }}
         >
-          ← DASHBOARD
+          ← Back to dashboard
         </Link>
-        <h1
-          style={{
-            fontFamily: typography.fontFamily.heading,
-            fontSize: typography.fontSize['3xl'],
-            fontWeight: typography.fontWeight.bold,
-            color: colors.primary,
-            margin: 0,
-          }}
-        >
-          Receive Books
-        </h1>
-        <div style={{ marginTop: spacing.sm }}>
+        <div>
+          <h1
+            style={{
+              fontFamily: typography.fontFamily.heading,
+              fontSize: typography.fontSize['3xl'],
+              fontWeight: typography.fontWeight.bold,
+              color: colors.primary,
+              margin: 0,
+            }}
+          >
+            Receive books
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              marginTop: spacing.xs,
+              fontSize: typography.fontSize.sm,
+              color: colors.textLight,
+            }}
+          >
+            Scan, confirm details, and assign a bin.
+          </p>
+        </div>
+        <div style={{ marginTop: spacing.xs }}>
           <Link
             href="/receive/batch"
             style={{
@@ -569,64 +574,47 @@ export default function ReceivePage() {
               fontWeight: typography.fontWeight.semibold,
             }}
           >
-            ⚡ Batch Receive Mode (up to 20)
+            ⚡ Batch receive mode (up to 20)
           </Link>
         </div>
       </header>
 
-      {successMessage && (
-        <div
-          style={{
-            backgroundColor: colors.success,
-            color: colors.deepCocoa,
-            padding: spacing.lg,
-            borderRadius: radii.md,
-            marginBottom: spacing.lg,
-            fontSize: typography.fontSize.xl,
-            fontWeight: typography.fontWeight.bold,
-            textAlign: 'center',
-            border: `3px solid ${colors.sageMist}`,
-          }}
-        >
-          {successMessage}
-        </div>
-      )}
-
       {error && (
-        <div>
+        <div style={{ marginBottom: spacing.lg }}>
           <div
             style={{
               backgroundColor: colors.warning,
               color: colors.deepCocoa,
-              padding: spacing.lg,
+              padding: spacing.md,
               borderRadius: radii.md,
-              marginBottom: spacing.lg,
+              marginBottom: spacing.md,
               fontSize: typography.fontSize.base,
               fontWeight: typography.fontWeight.semibold,
-              border: `3px solid ${colors.mustardOchre}`,
+              border: `2px solid ${colors.mustardOchre}`,
             }}
           >
             {error}
           </div>
 
-          <button
-            onClick={handleManualEntry}
-            style={{
-              width: '100%',
-              padding: spacing.lg,
-              backgroundColor: colors.secondary,
-              color: colors.cream,
-              border: `3px solid ${colors.secondary}`,
-              fontSize: typography.fontSize.lg,
-              fontWeight: typography.fontWeight.bold,
-              textTransform: 'uppercase',
-              borderRadius: radii.md,
-              cursor: 'pointer',
-              marginBottom: spacing.lg,
-            }}
-          >
-            ✏️ Enter Book Info Manually
-          </button>
+          {!bookData && (
+            <button
+              onClick={handleManualEntry}
+              style={{
+                width: '100%',
+                padding: spacing.md,
+                backgroundColor: colors.secondary,
+                color: colors.cream,
+                border: `2px solid ${colors.secondary}`,
+                fontSize: typography.fontSize.base,
+                fontWeight: typography.fontWeight.bold,
+                textTransform: 'uppercase',
+                borderRadius: radii.md,
+                cursor: 'pointer',
+              }}
+            >
+              ✏️ Enter book info manually
+            </button>
+          )}
         </div>
       )}
 
@@ -641,6 +629,18 @@ export default function ReceivePage() {
               marginBottom: spacing.lg,
             }}
           >
+            <p
+              style={{
+                fontSize: typography.fontSize.xs,
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: colors.textLight,
+                margin: 0,
+                marginBottom: spacing.sm,
+              }}
+            >
+              Step 1 · Scan or enter ISBN
+            </p>
             <label
               style={{
                 display: 'block',
@@ -652,7 +652,7 @@ export default function ReceivePage() {
                 marginBottom: spacing.sm,
               }}
             >
-              Scan or Enter ISBN
+              ISBN
             </label>
             <input
               type="text"
@@ -681,9 +681,12 @@ export default function ReceivePage() {
               style={{
                 width: '100%',
                 padding: spacing.lg,
-                backgroundColor: isLoading || !isbnInput.trim() ? colors.border : colors.primary,
+                backgroundColor:
+                  isLoading || !isbnInput.trim() ? colors.border : colors.primary,
                 color: isLoading || !isbnInput.trim() ? colors.textLight : colors.cream,
-                border: `3px solid ${isLoading || !isbnInput.trim() ? colors.border : colors.primary}`,
+                border: `3px solid ${
+                  isLoading || !isbnInput.trim() ? colors.border : colors.primary
+                }`,
                 fontSize: typography.fontSize.lg,
                 fontWeight: typography.fontWeight.bold,
                 textTransform: 'uppercase',
@@ -691,7 +694,7 @@ export default function ReceivePage() {
                 cursor: isLoading || !isbnInput.trim() ? 'not-allowed' : 'pointer',
               }}
             >
-              {isLoading ? 'LOOKING UP...' : 'LOOKUP BOOK'}
+              {isLoading ? 'Looking up…' : 'Lookup book'}
             </button>
           </div>
         </form>
@@ -699,7 +702,6 @@ export default function ReceivePage() {
 
       {bookData && (
         <form onSubmit={handleSubmit}>
-          {/* Book Info Display */}
           <div
             style={{
               backgroundColor: colors.surface,
@@ -709,27 +711,65 @@ export default function ReceivePage() {
               marginBottom: spacing.lg,
             }}
           >
-            {isManualEntry ? (
-              <div style={{ marginBottom: spacing.lg }}>
-                <div style={{ marginBottom: spacing.lg }}>
+            <p
+              style={{
+                fontSize: typography.fontSize.xs,
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: colors.textLight,
+                margin: 0,
+                marginBottom: spacing.sm,
+              }}
+            >
+              Step 2 · Confirm book details
+            </p>
+
+            <div style={{ display: 'flex', gap: spacing.xl, marginBottom: spacing.lg }}>
+              <div
+                style={{
+                  width: '120px',
+                  height: '160px',
+                  backgroundColor: colors.cream,
+                  border: `2px solid ${colors.border}`,
+                  borderRadius: radii.sm,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: typography.fontSize.xs,
+                  color: colors.textLight,
+                  flexShrink: 0,
+                  overflow: 'hidden',
+                }}
+              >
+                {bookData.coverUrl ? (
+                  <img
+                    src={bookData.coverUrl}
+                    alt={bookData.title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  'No Cover'
+                )}
+              </div>
+
+              <div style={{ flex: 1, display: 'grid', gap: spacing.md }}>
+                <div>
                   <label
                     style={{
                       display: 'block',
-                      fontSize: typography.fontSize.sm,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.textLight,
+                      fontSize: typography.fontSize.xs,
                       textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      marginBottom: spacing.sm,
+                      letterSpacing: '0.08em',
+                      color: colors.textLight,
+                      marginBottom: spacing.xs,
                     }}
                   >
-                    Title *
+                    Title
                   </label>
                   <input
                     type="text"
                     value={bookData.title}
                     onChange={(e) => setBookData({ ...bookData, title: e.target.value })}
-                    placeholder="Enter book title..."
                     style={{
                       width: '100%',
                       padding: spacing.md,
@@ -737,32 +777,29 @@ export default function ReceivePage() {
                       fontWeight: typography.fontWeight.semibold,
                       color: colors.text,
                       backgroundColor: colors.cream,
-                      border: `3px solid ${colors.border}`,
+                      border: `2px solid ${colors.border}`,
                       borderRadius: radii.md,
-                      boxSizing: 'border-box',
                     }}
                   />
                 </div>
 
-                <div style={{ marginBottom: 0 }}>
+                <div>
                   <label
                     style={{
                       display: 'block',
-                      fontSize: typography.fontSize.sm,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.textLight,
+                      fontSize: typography.fontSize.xs,
                       textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      marginBottom: spacing.sm,
+                      letterSpacing: '0.08em',
+                      color: colors.textLight,
+                      marginBottom: spacing.xs,
                     }}
                   >
-                    Author *
+                    Author
                   </label>
                   <input
                     type="text"
                     value={bookData.author}
                     onChange={(e) => setBookData({ ...bookData, author: e.target.value })}
-                    placeholder="Enter author name..."
                     style={{
                       width: '100%',
                       padding: spacing.md,
@@ -770,130 +807,102 @@ export default function ReceivePage() {
                       fontWeight: typography.fontWeight.semibold,
                       color: colors.text,
                       backgroundColor: colors.cream,
-                      border: `3px solid ${colors.border}`,
+                      border: `2px solid ${colors.border}`,
                       borderRadius: radii.md,
-                      boxSizing: 'border-box',
                     }}
                   />
                 </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: spacing.xl, marginBottom: spacing.lg }}>
-                <div
-                  style={{
-                    width: '120px',
-                    height: '160px',
-                    backgroundColor: colors.cream,
-                    border: `2px solid ${colors.border}`,
-                    borderRadius: radii.sm,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: typography.fontSize.xs,
-                    color: colors.textLight,
-                    flexShrink: 0,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {bookData.coverUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={bookData.coverUrl}
-                      alt={bookData.title}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    'No Cover'
-                  )}
-                </div>
 
-                <div style={{ flex: 1 }}>
-                  <h2
+                <div>
+                  <label
                     style={{
-                      fontFamily: typography.fontFamily.heading,
-                      fontSize: typography.fontSize['2xl'],
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.text,
-                      margin: 0,
-                      marginBottom: spacing.sm,
-                    }}
-                  >
-                    {bookData.title}
-                  </h2>
-                  <p
-                    style={{
-                      fontSize: typography.fontSize.lg,
+                      display: 'block',
+                      fontSize: typography.fontSize.xs,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
                       color: colors.textLight,
-                      margin: 0,
-                      marginBottom: spacing.md,
+                      marginBottom: spacing.xs,
                     }}
                   >
-                    by {bookData.author}
-                  </p>
-
-                  {/* ISBN row with Copy button */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
-                    <div
+                    ISBN
+                  </label>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: spacing.xs,
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={bookData.isbn}
+                      onChange={(e) => setBookData({ ...bookData, isbn: e.target.value })}
                       style={{
+                        flex: 1,
+                        padding: spacing.sm,
                         fontFamily: 'monospace',
                         fontSize: typography.fontSize.base,
                         fontWeight: typography.fontWeight.bold,
                         color: colors.text,
                         backgroundColor: colors.cream,
-                        padding: spacing.sm,
                         borderRadius: radii.sm,
                         border: `2px solid ${colors.border}`,
-                        display: 'inline-block',
                       }}
-                    >
-                      ISBN: {bookData.isbn}
-                    </div>
-
+                    />
                     <button
                       type="button"
                       onClick={handleCopyIsbn}
                       style={{
-                        padding: `${spacing.xs} ${spacing.md}`,
+                        width: 28,
+                        height: 28,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         borderRadius: radii.md,
-                        border: `2px solid ${colors.border}`,
+                        border: `1px solid ${colors.border}`,
                         backgroundColor: isbnCopied ? colors.sageMist : colors.surface,
                         color: colors.text,
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.semibold,
                         cursor: 'pointer',
-                        whiteSpace: 'nowrap',
                       }}
                       title="Copy ISBN"
                     >
-                      {isbnCopied ? '✅ Copied!' : '📋 Copy'}
+                      <Copy size={16} />
                     </button>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
 
-            <div style={{ display: 'flex', gap: spacing.md }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginTop: spacing.sm,
+              }}
+            >
               <button
                 type="button"
                 onClick={handleNewScan}
                 style={{
-                  flex: 1,
-                  padding: spacing.md,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: `${spacing.xs} ${spacing.sm}`,
                   backgroundColor: colors.surface,
                   color: colors.text,
-                  border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.base,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.xs,
                   fontWeight: typography.fontWeight.semibold,
-                  borderRadius: radii.sm,
+                  borderRadius: radii.md,
                   cursor: 'pointer',
                 }}
               >
-                🔄 New Scan
+                <RotateCcw size={14} />
+                <span>New scan</span>
               </button>
             </div>
           </div>
 
-          {/* Receiving Details */}
           <div
             style={{
               backgroundColor: colors.surface,
@@ -903,6 +912,19 @@ export default function ReceivePage() {
               marginBottom: spacing.lg,
             }}
           >
+            <p
+              style={{
+                fontSize: typography.fontSize.xs,
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: colors.textLight,
+                margin: 0,
+                marginBottom: spacing.sm,
+              }}
+            >
+              Step 3 · Receiving details
+            </p>
+
             <h3
               style={{
                 fontFamily: typography.fontFamily.heading,
@@ -915,10 +937,9 @@ export default function ReceivePage() {
                 marginBottom: spacing.lg,
               }}
             >
-              Receiving Details
+              Age & bin
             </h3>
 
-            {/* Age Group */}
             <div style={{ marginBottom: spacing.lg }}>
               <div
                 style={{
@@ -940,16 +961,19 @@ export default function ReceivePage() {
                     margin: 0,
                   }}
                 >
-                  Age Group *
+                  Age group *
                 </label>
 
                 <button
                   type="button"
                   onClick={handleAmazonAgePrompt}
                   style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
                     padding: `${spacing.xs} ${spacing.sm}`,
                     borderRadius: radii.md,
-                    border: `2px solid ${colors.border}`,
+                    border: `1px solid ${colors.border}`,
                     backgroundColor: colors.surface,
                     color: colors.text,
                     fontSize: typography.fontSize.xs,
@@ -959,7 +983,8 @@ export default function ReceivePage() {
                   }}
                   title='Paste the Amazon "Reading age" or "Age range" and I’ll match it to your categories'
                 >
-                  🧩 Amazon age match
+                  <Sparkles size={14} />
+                  <span>Amazon age match</span>
                 </button>
               </div>
 
@@ -1051,7 +1076,6 @@ export default function ReceivePage() {
               </select>
             </div>
 
-            {/* Bin Location */}
             <div style={{ marginBottom: 0 }}>
               <div
                 style={{
@@ -1072,7 +1096,7 @@ export default function ReceivePage() {
                     margin: 0,
                   }}
                 >
-                  Bin Location
+                  Bin location
                 </label>
 
                 <button
@@ -1083,15 +1107,17 @@ export default function ReceivePage() {
                   style={{
                     width: 28,
                     height: 28,
-                    borderRadius: 999,
-                    border: `2px solid ${colors.border}`,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: radii.md,
+                    border: `1px solid ${colors.border}`,
                     backgroundColor: !bin ? colors.border : colors.surface,
                     color: colors.text,
-                    fontWeight: typography.fontWeight.bold,
                     cursor: !bin ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  i
+                  <Info size={16} />
                 </button>
               </div>
 
@@ -1180,7 +1206,6 @@ export default function ReceivePage() {
                 </div>
               )}
 
-              {/* Theme Suggestion (under Bin Location) */}
               {themeSuggestion && (
                 <div
                   style={{
@@ -1200,7 +1225,8 @@ export default function ReceivePage() {
                     }}
                   >
                     🏷️ Theme:{' '}
-                    {themeSuggestion.theme.charAt(0).toUpperCase() + themeSuggestion.theme.slice(1)}
+                    {themeSuggestion.theme.charAt(0).toUpperCase() +
+                      themeSuggestion.theme.slice(1)}
                   </div>
                   <div style={{ fontSize: typography.fontSize.xs, color: colors.deepCocoa }}>
                     {themeSuggestion.explanation}
@@ -1225,34 +1251,69 @@ export default function ReceivePage() {
                 }}
               >
                 <option value="">Select bin location...</option>
-                {filteredBins.map((b) => (
-                  <option key={b.bin_code} value={b.bin_code}>
-                    {b.bin_code}
-                    {b.display_name ? ` — ${b.display_name}` : ''}
-                  </option>
-                ))}
+                {filteredBins.map((b) => {
+                  const ageKey = normalizeAgeKey(b.age_group);
+                  const label =
+                    b.display_name && b.display_name !== b.bin_code
+                      ? `${b.bin_code} — ${b.display_name}`
+                      : b.bin_code;
+                  return (
+                    <option key={b.bin_code} value={b.bin_code}>
+                      {label}
+                      {ageKey && ` · ${AGE_GROUP_LABELS[ageKey] || ageKey}`}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting || !ageGroup}
+          <div
             style={{
-              width: '100%',
-              padding: spacing.xl,
-              backgroundColor: isSubmitting || !ageGroup ? colors.border : colors.primary,
-              color: isSubmitting || !ageGroup ? colors.textLight : colors.cream,
-              border: `3px solid ${isSubmitting || !ageGroup ? colors.border : colors.primary}`,
-              fontSize: typography.fontSize.xl,
-              fontWeight: typography.fontWeight.bold,
-              textTransform: 'uppercase',
-              borderRadius: radii.md,
-              cursor: isSubmitting || !ageGroup ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: spacing.sm,
             }}
           >
-            {isSubmitting ? 'RECEIVING...' : 'RECEIVE BOOK →'}
-          </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !ageGroup}
+              style={{
+                width: '100%',
+                padding: spacing.xl,
+                backgroundColor:
+                  isSubmitting || !ageGroup ? colors.border : colors.primary,
+                color: isSubmitting || !ageGroup ? colors.textLight : colors.cream,
+                border: `3px solid ${
+                  isSubmitting || !ageGroup ? colors.border : colors.primary
+                }`,
+                fontSize: typography.fontSize.xl,
+                fontWeight: typography.fontWeight.bold,
+                textTransform: 'uppercase',
+                borderRadius: radii.md,
+                cursor: isSubmitting || !ageGroup ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isSubmitting ? 'Receiving…' : 'Receive book →'}
+            </button>
+
+            {successMessage && (
+              <div
+                style={{
+                  backgroundColor: colors.success,
+                  color: colors.deepCocoa,
+                  padding: spacing.sm,
+                  borderRadius: radii.md,
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.semibold,
+                  textAlign: 'center',
+                  border: `2px solid ${colors.sageMist}`,
+                }}
+              >
+                {successMessage}
+              </div>
+            )}
+          </div>
         </form>
       )}
     </div>
