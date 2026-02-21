@@ -1,12 +1,24 @@
+"use client";
+
+import { useState } from 'react';
 import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
-import { getMembersList } from '@/lib/queries';
 import { getTierDisplayName } from '@/lib/types';
+import { getMembersList, type MembersListRow } from '@/lib/queries';
+import { updateMember } from '@/app/actions/members';
 
 export const dynamic = 'force-dynamic';
 
 export default async function MembersPage() {
-  const members = await getMembersList();
+  const initialMembers = await getMembersList();
+  return <MembersClient initialMembers={initialMembers} />;
+}
+
+function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] }) {
+  const [members, setMembers] = useState<MembersListRow[]>(initialMembers);
+  const [editing, setEditing] = useState<MembersListRow | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const totals = {
     all: members.length,
@@ -14,6 +26,44 @@ export default async function MembersPage() {
     active: members.filter((m) => m.subscription_status === 'active').length,
     founding: members.filter((m) => m.is_founding_flock).length,
     vip: members.filter((m) => m.is_vip).length,
+  };
+
+  const handleOpenEdit = (member: MembersListRow) => {
+    setEditing(member);
+    setError(null);
+  };
+
+  const handleCloseEdit = () => {
+    setEditing(null);
+    setError(null);
+  };
+
+  const handleSave = async () => {
+    if (!editing) return;
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const result = await updateMember(editing.id, {
+        subscription_status: editing.subscription_status,
+        is_founding_flock: !!editing.is_founding_flock,
+        is_vip: !!editing.is_vip,
+      });
+
+      if (!result.success) {
+        setError(result.error || 'Failed to update member');
+        setIsSaving(false);
+        return;
+      }
+
+      setMembers((prev) => prev.map((m) => (m.id === editing.id ? editing : m)));
+      setIsSaving(false);
+      setEditing(null);
+    } catch (e) {
+      setError('Unexpected error while saving');
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -116,6 +166,7 @@ export default async function MembersPage() {
                 <th style={thStyle}>Age Group</th>
                 <th style={thStyle}>Next Ship</th>
                 <th style={thStyle}>Flags</th>
+                <th style={thStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -176,13 +227,31 @@ export default async function MembersPage() {
                         {!m.is_founding_flock && !m.is_vip && <span>—</span>}
                       </div>
                     </td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(m)}
+                        style={{
+                          padding: `${spacing.xs} ${spacing.md}`,
+                          fontSize: typography.fontSize.xs,
+                          borderRadius: radii.sm,
+                          border: `1px solid ${colors.border}`,
+                          backgroundColor: colors.surface,
+                          cursor: 'pointer',
+                          textTransform: 'uppercase',
+                          fontWeight: typography.fontWeight.semibold,
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
 
               {members.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ ...tdStyle, textAlign: 'center', padding: spacing.xl }}>
+                  <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', padding: spacing.xl }}>
                     No members yet. You can add waitlist members manually in Supabase for now.
                   </td>
                 </tr>
@@ -191,6 +260,249 @@ export default async function MembersPage() {
           </table>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editing && (
+        <>
+          <div
+            onClick={handleCloseEdit}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 1000,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: colors.surface,
+              borderRadius: radii.lg,
+              border: `2px solid ${colors.primary}`,
+              padding: spacing.xl,
+              maxWidth: '480px',
+              width: '90%',
+              zIndex: 1001,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: spacing.md,
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    marginBottom: spacing.xs,
+                    fontSize: typography.fontSize['xl'],
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.primary,
+                  }}
+                >
+                  Edit Member
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: typography.fontSize.xs,
+                    color: colors.textLight,
+                  }}
+                >
+                  Update waitlist/active status and internal flags.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseEdit}
+                disabled={isSaving}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  fontSize: typography.fontSize.lg,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  marginBottom: spacing.sm,
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  backgroundColor: colors.warning,
+                  color: colors.deepCocoa,
+                  fontSize: typography.fontSize.xs,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {/* Name / email (read-only for now) */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Name
+              </label>
+              <div style={{ ...tdMainStyle, padding: 0 }}>{editing.name || '—'}</div>
+            </div>
+
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Email
+              </label>
+              <div style={{ ...tdMonoStyle, padding: 0 }}>{editing.email || '—'}</div>
+            </div>
+
+            {/* Status */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Status
+              </label>
+              <select
+                value={editing.subscription_status || ''}
+                onChange={(e) =>
+                  setEditing({ ...editing, subscription_status: e.target.value || null })
+                }
+                style={{
+                  width: '100%',
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.sm,
+                  backgroundColor: colors.cream,
+                }}
+              >
+                <option value="">(none)</option>
+                <option value="waitlist">Waitlist</option>
+                <option value="active">Active</option>
+              </select>
+            </div>
+
+            {/* Flags */}
+            <div style={{ marginBottom: spacing.lg }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Flags
+              </label>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: spacing.xs,
+                  fontSize: typography.fontSize.sm,
+                }}
+              >
+                <label style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
+                  <input
+                    type="checkbox"
+                    checked={!!editing.is_founding_flock}
+                    onChange={(e) =>
+                      setEditing({ ...editing, is_founding_flock: e.target.checked })
+                    }
+                  />
+                  Founding Flock
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
+                  <input
+                    type="checkbox"
+                    checked={!!editing.is_vip}
+                    onChange={(e) => setEditing({ ...editing, is_vip: e.target.checked })}
+                  />
+                  VIP
+                </label>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: spacing.sm,
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleCloseEdit}
+                disabled={isSaving}
+                style={{
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.surface,
+                  fontSize: typography.fontSize.sm,
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                style={{
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.primary}`,
+                  backgroundColor: isSaving ? colors.border : colors.primary,
+                  color: colors.cream,
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.semibold,
+                  textTransform: 'uppercase',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
