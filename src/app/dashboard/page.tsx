@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import { getInventory, updateBookCopy } from '@/app/actions/inventory';
@@ -17,6 +17,11 @@ interface InventoryItem {
   status: string;
   receivedAt: string;
   coverUrl: string | null;
+}
+
+interface BinOption {
+  bin_code: string;
+  display_name: string | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -48,21 +53,6 @@ const AGE_GROUP_LABELS: Record<string, string> = {
   sky_readers: 'Sky Readers (9-12)',
 };
 
-interface BinOption {
-  bin_code: string;
-  display_name: string | null;
-  age_group: string | null;
-}
-
-function normalizeAgeKey(v: string | null | undefined): string {
-  const x = (v || '').trim().toLowerCase();
-  if (x === 'hatch' || x === 'hatchlings') return 'hatchlings';
-  if (x === 'fled' || x === 'fledglings') return 'fledglings';
-  if (x === 'soar' || x === 'soarers') return 'soarers';
-  if (x === 'sky' || x === 'sky_readers' || x === 'sky readers') return 'sky_readers';
-  return x;
-}
-
 export default function Dashboard() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [filteredInventory, setFilteredInventory] = useState<InventoryItem[]>([]);
@@ -82,19 +72,6 @@ export default function Dashboard() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  // Bins for dropdown
-  const [bins, setBins] = useState<BinOption[]>([]);
-
-  // Filter bins by selected age group
-  const filteredBins = useMemo(() => {
-    if (!editForm.ageGroup) return bins;
-    const selected = normalizeAgeKey(editForm.ageGroup);
-    return bins.filter((b) => {
-      const binAge = normalizeAgeKey(b.age_group);
-      return !binAge || binAge === selected;
-    });
-  }, [bins, editForm.ageGroup]);
 
   // Enlarged cover state
   const [enlargedCover, setEnlargedCover] = useState<string | null>(null);
@@ -119,49 +96,44 @@ export default function Dashboard() {
   const filtersActive =
     !!searchQuery || statusFilter !== 'all' || ageGroupFilter !== 'all';
 
-  // Load inventory + stats
+  // Bin options
+  const [bins, setBins] = useState<BinOption[]>([]);
+
+  // Load inventory + stats + bins
   useEffect(() => {
     loadInventoryAndStats();
-  }, []);
-
-  // Load bins for dropdown
-  useEffect(() => {
-    const loadBins = async () => {
-      try {
-        const response = await fetch('/api/bins', { cache: 'no-store' });
-        const data = await response.json();
-        if (response.ok) {
-          setBins(data.bins || []);
-        }
-      } catch (err) {
-        console.error('Failed to load bins:', err);
-      }
-    };
-
     loadBins();
   }, []);
 
-  // Clear bin selection if age group changes and bin is no longer valid
-  useEffect(() => {
-    if (!editForm.bin) return;
-    const stillValid = filteredBins.some((b) => b.bin_code === editForm.bin);
-    if (!stillValid) {
-      setEditForm((prev) => ({ ...prev, bin: '' }));
+  async function loadBins() {
+    try {
+      const res = await fetch('/api/bins', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        bins?: { bin_code: string; display_name: string | null }[];
+      };
+      const binsFromApi = data.bins ?? [];
+      setBins(
+        binsFromApi.map((b) => ({
+          bin_code: b.bin_code,
+          display_name: b.display_name ?? null,
+        }))
+      );
+    } catch (err) {
+      console.error('Failed to load bins:', err);
     }
-  }, [editForm.ageGroup, filteredBins, editForm.bin]);
+  }
 
   async function loadInventoryAndStats() {
     setIsLoading(true);
 
     try {
-      // Fetch inventory and stats in parallel
       const [inventoryResult, statsResult] = await Promise.all([
         getInventory(),
         getQueueStats(),
       ]);
 
       if (inventoryResult.success && inventoryResult.inventory) {
-        // Keep all inventory here, including retired; filtering logic handles visibility
         const allInventory = inventoryResult.inventory;
         setInventory(allInventory);
         setFilteredInventory(allInventory);
@@ -181,20 +153,16 @@ export default function Dashboard() {
   useEffect(() => {
     let filtered = [...inventory];
 
-    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter((item) => item.status === statusFilter);
     } else {
-      // When status = all, hide retired by default
       filtered = filtered.filter((item) => item.status !== 'retired');
     }
 
-    // Age group filter
     if (ageGroupFilter !== 'all') {
       filtered = filtered.filter((item) => item.ageGroup === ageGroupFilter);
     }
 
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -207,7 +175,6 @@ export default function Dashboard() {
       );
     }
 
-    // Sorting
     filtered.sort((a, b) => {
       let comparison = 0;
 
@@ -329,13 +296,25 @@ export default function Dashboard() {
               fontSize: typography.fontSize.lg,
               color: colors.textLight,
               margin: 0,
+              marginBottom: spacing.xs,
             }}
           >
             Logistics Dashboard
           </p>
+
+          {/* Small members link */}
+          <Link
+            href="/members"
+            style={{
+              fontSize: typography.fontSize.sm,
+              color: colors.textLight,
+              textDecoration: 'none',
+            }}
+          >
+            View members & waitlist →
+          </Link>
         </div>
 
-        {/* Pippa Mascot */}
         <div
           style={{
             width: '120px',
@@ -1662,40 +1641,39 @@ export default function Dashboard() {
                   onChange={(e) =>
                     setEditForm({ ...editForm, bin: e.target.value })
                   }
-                  disabled={!editForm.ageGroup}
                   style={{
                     width: '100%',
                     padding: spacing.md,
-                    fontSize: typography.fontSize.base,
-                    fontWeight: typography.fontWeight.semibold,
-                    color: !editForm.ageGroup ? colors.textLight : colors.text,
-                    backgroundColor: !editForm.ageGroup ? colors.border : colors.cream,
+                    fontSize: typography.fontSize.lg,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.text,
+                    backgroundColor: colors.cream,
                     border: `2px solid ${colors.border}`,
                     borderRadius: radii.md,
-                    fontFamily: typography.fontFamily.body,
-                    cursor: !editForm.ageGroup ? 'not-allowed' : 'pointer',
+                    fontFamily: 'monospace',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
                   }}
                 >
-                  <option value="">
-                    {!editForm.ageGroup ? 'Select age group first...' : 'Select bin location...'}
-                  </option>
-                  {filteredBins.map((b) => {
-                    const ageKey = normalizeAgeKey(b.age_group);
-                    const label =
-                      b.display_name && b.display_name !== b.bin_code
-                        ? `${b.bin_code} — ${b.display_name}`
-                        : b.bin_code;
-                    return (
-                      <option key={b.bin_code} value={b.bin_code}>
-                        {label}
-                      </option>
-                    );
-                  })}
+                  <option value="">Select bin...</option>
+                  {/* Preserve existing bin if not in list */}
+                  {editForm.bin &&
+                    !bins.some((b) => b.bin_code === editForm.bin) && (
+                      <option value={editForm.bin}>{editForm.bin}</option>
+                    )}
+                  {bins.map((b) => (
+                    <option key={b.bin_code} value={b.bin_code}>
+                      {b.bin_code}
+                      {b.display_name && b.display_name !== b.bin_code
+                        ? ` — ${b.display_name}`
+                        : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               {/* Status */}
-              <div style={{ marginBottom: spacing.sm }}>
+              <div style={{ marginBottom: 0 }}>
                 <label
                   style={{
                     display: 'block',
@@ -1736,40 +1714,15 @@ export default function Dashboard() {
                   <option value="damaged">Damaged</option>
                   <option value="retired">Retired</option>
                 </select>
-
-                {/* Status hints */}
-                {editForm.status === 'damaged' && (
-                  <p
-                    style={{
-                      marginTop: spacing.xs,
-                      fontSize: typography.fontSize.xs,
-                      color: colors.textLight,
-                    }}
-                  >
-                    Damaged copies will stay out of member shipments.
-                  </p>
-                )}
-                {editForm.status === 'retired' && (
-                  <p
-                    style={{
-                      marginTop: spacing.xs,
-                      fontSize: typography.fontSize.xs,
-                      color: colors.textLight,
-                    }}
-                  >
-                    Retired copies are hidden from active inventory views.
-                  </p>
-                )}
               </div>
             </div>
 
-            {/* Bottom Actions */}
+            {/* Modal Actions */}
             <div
               style={{
                 display: 'flex',
                 gap: spacing.md,
                 justifyContent: 'flex-end',
-                marginTop: 'auto',
               }}
             >
               <button

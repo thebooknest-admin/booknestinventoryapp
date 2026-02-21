@@ -45,6 +45,20 @@ type ShipmentDetailsRow = {
   members?: ShipmentDetailsMember | ShipmentDetailsMember[] | null;
 };
 
+// Simple member row type for the Members view
+export type MembersListRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  tier: string | null;
+  age_group: string | null;
+  subscription_status: string | null;
+  next_ship_date: string | null;
+  is_founding_flock: boolean | null;
+  is_vip: boolean | null;
+  created_at: string;
+};
+
 // =====================================================
 // OPS DASHBOARD QUERIES - UPDATED FOR NEW SHIPMENTS SYSTEM
 // =====================================================
@@ -299,4 +313,26 @@ export async function completeShipment(shipmentId: string): Promise<void> {
     .eq('id', shipmentId);
 
   if (error) throw error;
+}
+
+// =====================================================
+// MEMBERS LIST FOR OPS DASHBOARD
+// =====================================================
+
+export async function getMembersList(): Promise<MembersListRow[]> {
+  const supabase = supabaseServer();
+
+  const { data, error } = await supabase
+    .from('members')
+    .select(
+      `id, name, email, tier, age_group, subscription_status, next_ship_date, is_founding_flock, is_vip, created_at`
+    )
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching members list:', error);
+    throw error;
+  }
+
+  return (data || []) as MembersListRow[];
 }
