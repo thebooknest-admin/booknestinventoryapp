@@ -1,198 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-// Define our theme categories
-const THEMES = [
-  'animals',
-  'adventure',
-  'fantasy',
-  'mystery',
-  'science',
-  'historical',
-  'educational',
-  'bedtime',
-  'family',
-  'friendship',
-  'humor',
-  'sports',
-  'nature',
-  'general',
-];
-
-function suggestThemeFromKeywords(title: string, description: string): {
-  theme: string;
-  explanation: string;
-} {
-  const text = `${title} ${description}`.toLowerCase();
-
-  // Animals
-  if (
-    text.includes('animal') ||
-    text.includes('dog') ||
-    text.includes('cat') ||
-    text.includes('bear') ||
-    text.includes('bird') ||
-    text.includes('bunny') ||
-    text.includes('rabbit') ||
-    text.includes('wildlife') ||
-    text.includes('zoo') ||
-    text.includes('farm') ||
-    text.includes('pet')
-  ) {
-    return { theme: 'animals', explanation: 'Book features animals or wildlife themes' };
-  }
-
-  // Adventure
-  if (
-    text.includes('adventure') ||
-    text.includes('journey') ||
-    text.includes('quest') ||
-    text.includes('explore') ||
-    text.includes('treasure') ||
-    text.includes('expedition')
-  ) {
-    return { theme: 'adventure', explanation: 'Book features adventure and exploration' };
-  }
-
-  // Fantasy
-  if (
-    text.includes('magic') ||
-    text.includes('wizard') ||
-    text.includes('dragon') ||
-    text.includes('fairy') ||
-    text.includes('fantasy') ||
-    text.includes('enchant') ||
-    text.includes('spell') ||
-    text.includes('witch')
-  ) {
-    return { theme: 'fantasy', explanation: 'Book features fantasy and magical elements' };
-  }
-
-  // Mystery
-  if (
-    text.includes('mystery') ||
-    text.includes('detective') ||
-    text.includes('solve') ||
-    text.includes('clue') ||
-    text.includes('secret') ||
-    text.includes('investigate')
-  ) {
-    return { theme: 'mystery', explanation: 'Book features mystery and problem-solving' };
-  }
-
-  // Science
-  if (
-    text.includes('science') ||
-    text.includes('experiment') ||
-    text.includes('space') ||
-    text.includes('planet') ||
-    text.includes('robot') ||
-    text.includes('invention') ||
-    text.includes('technology') ||
-    text.includes('astronomy')
-  ) {
-    return { theme: 'science', explanation: 'Book features science and discovery' };
-  }
-
-  // Historical
-  if (
-    text.includes('history') ||
-    text.includes('historical') ||
-    text.includes('war') ||
-    text.includes('ancient') ||
-    text.includes('pioneer') ||
-    text.includes('colonial') ||
-    text.includes('civil war')
-  ) {
-    return { theme: 'historical', explanation: 'Book features historical themes' };
-  }
-
-  // Educational
-  if (
-    text.includes('learn') ||
-    text.includes('alphabet') ||
-    text.includes('numbers') ||
-    text.includes('colors') ||
-    text.includes('shapes') ||
-    text.includes('educational') ||
-    text.includes('counting')
-  ) {
-    return { theme: 'educational', explanation: 'Book focuses on learning and education' };
-  }
-
-  // Bedtime
-  if (
-    text.includes('bedtime') ||
-    text.includes('sleep') ||
-    text.includes('goodnight') ||
-    text.includes('night time') ||
-    text.includes('dream')
-  ) {
-    return { theme: 'bedtime', explanation: 'Book suitable for bedtime reading' };
-  }
-
-  // Family
-  if (
-    text.includes('family') ||
-    text.includes('mother') ||
-    text.includes('father') ||
-    text.includes('parent') ||
-    text.includes('siblings') ||
-    text.includes('brother') ||
-    text.includes('sister')
-  ) {
-    return { theme: 'family', explanation: 'Book focuses on family relationships' };
-  }
-
-  // Friendship
-  if (
-    text.includes('friend') ||
-    text.includes('together') ||
-    text.includes('kindness') ||
-    text.includes('sharing')
-  ) {
-    return { theme: 'friendship', explanation: 'Book focuses on friendship and relationships' };
-  }
-
-  // Humor
-  if (
-    text.includes('funny') ||
-    text.includes('silly') ||
-    text.includes('laugh') ||
-    text.includes('joke') ||
-    text.includes('hilarious')
-  ) {
-    return { theme: 'humor', explanation: 'Book features humor and comedy' };
-  }
-
-  // Sports
-  if (
-    text.includes('sport') ||
-    text.includes('soccer') ||
-    text.includes('basketball') ||
-    text.includes('baseball') ||
-    text.includes('football') ||
-    text.includes('game') ||
-    text.includes('team')
-  ) {
-    return { theme: 'sports', explanation: 'Book features sports and athletics' };
-  }
-
-  // Nature
-  if (
-    text.includes('nature') ||
-    text.includes('forest') ||
-    text.includes('ocean') ||
-    text.includes('garden') ||
-    text.includes('environment') ||
-    text.includes('tree') ||
-    text.includes('flower')
-  ) {
-    return { theme: 'nature', explanation: 'Book features nature and environment' };
-  }
-
-  // Default
-  return { theme: 'general', explanation: 'General interest book' };
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 function suggestAgeCategory(title: string, author: string, description: string): {
   category: string;
@@ -284,6 +96,157 @@ function suggestAgeCategory(title: string, author: string, description: string):
   };
 }
 
+// Define keyword mappings for common tag patterns
+const TAG_KEYWORD_MAP: Record<string, string[]> = {
+  // Animals
+  'dogs': ['dog', 'puppy', 'puppies', 'canine'],
+  'cats': ['cat', 'kitten', 'kitty', 'feline'],
+  'bears': ['bear', 'teddy', 'grizzly', 'polar bear'],
+  'birds': ['bird', 'parrot', 'owl', 'eagle', 'chicken', 'duck', 'penguin'],
+  'rabbits': ['rabbit', 'bunny', 'hare'],
+  'horses': ['horse', 'pony', 'stallion', 'mare'],
+  'dinosaurs': ['dinosaur', 'dino', 't-rex', 'triceratops', 'prehistoric'],
+  'farm-animals': ['farm', 'barn', 'cow', 'pig', 'sheep', 'goat', 'rooster'],
+  'zoo-animals': ['zoo', 'safari', 'elephant', 'giraffe', 'lion', 'tiger', 'monkey'],
+  'ocean-animals': ['ocean', 'sea', 'fish', 'whale', 'dolphin', 'shark', 'crab', 'octopus'],
+  
+  // Themes & Topics
+  'space-planets': ['space', 'planet', 'astronaut', 'rocket', 'moon', 'stars', 'galaxy', 'solar system'],
+  'science': ['science', 'experiment', 'laboratory', 'discovery', 'scientist'],
+  'nature': ['nature', 'forest', 'woods', 'wilderness', 'environment', 'tree', 'plants'],
+  'seasons': ['spring', 'summer', 'fall', 'autumn', 'winter', 'season'],
+  'weather': ['rain', 'snow', 'sunshine', 'storm', 'cloud', 'thunder', 'wind'],
+  
+  // Activities
+  'outdoor-adventures': ['adventure', 'explore', 'hiking', 'camping', 'outdoor', 'journey'],
+  'sports': ['sport', 'soccer', 'basketball', 'baseball', 'football', 'tennis', 'game'],
+  'dancing': ['dance', 'ballet', 'dancing', 'twirl', 'pirouette'],
+  'music': ['music', 'song', 'singing', 'instrument', 'piano', 'guitar', 'band'],
+  'crafts-making': ['craft', 'art', 'making', 'create', 'build', 'draw', 'paint'],
+  
+  // Vehicles
+  'cars': ['car', 'automobile', 'vehicle', 'drive', 'racing'],
+  'trucks': ['truck', 'pickup', 'dump truck', 'fire truck'],
+  'trains': ['train', 'locomotive', 'railroad', 'railway', 'choo choo'],
+  'planes': ['plane', 'airplane', 'aircraft', 'jet', 'flying'],
+  'boats': ['boat', 'ship', 'sail', 'yacht', 'canoe'],
+  
+  // Fantasy & Imagination
+  'fairies': ['fairy', 'fairies', 'pixie', 'sprite', 'magical creature'],
+  'dragons': ['dragon', 'fire-breathing'],
+  'magic': ['magic', 'magical', 'spell', 'wizard', 'witch', 'enchanted'],
+  'imagination-pretend-play': ['imagination', 'pretend', 'make-believe', 'fantasy', 'dream'],
+  'monsters': ['monster', 'creature', 'beast'],
+  
+  // Emotions & Social
+  'friendship': ['friend', 'friendship', 'together', 'pal', 'buddy'],
+  'family': ['family', 'mother', 'father', 'parent', 'mom', 'dad', 'sibling', 'brother', 'sister', 'grandma', 'grandpa'],
+  'feelings-emotions': ['feeling', 'emotion', 'happy', 'sad', 'angry', 'scared', 'brave', 'proud'],
+  'love-belonging': ['love', 'belong', 'home', 'caring', 'kindness', 'hug'],
+  'sharing-helping': ['share', 'sharing', 'help', 'helping', 'generous', 'give'],
+  
+  // Humor
+  'silly': ['silly', 'goofy', 'wacky', 'ridiculous', 'absurd'],
+  'funny': ['funny', 'hilarious', 'laugh', 'giggle', 'humorous', 'comedy'],
+  'jokes': ['joke', 'pun', 'riddle'],
+  
+  // Educational
+  'alphabet-letters': ['alphabet', 'letter', 'abc', 'spelling'],
+  'numbers-counting': ['number', 'counting', 'count', 'math', 'addition'],
+  'colors': ['color', 'colours', 'red', 'blue', 'rainbow'],
+  'shapes': ['shape', 'circle', 'square', 'triangle'],
+  
+  // Daily Life
+  'bedtime': ['bedtime', 'sleep', 'goodnight', 'pajamas', 'dream'],
+  'food': ['food', 'eat', 'hungry', 'snack', 'meal', 'cooking', 'baking'],
+  'school': ['school', 'classroom', 'teacher', 'student', 'learning'],
+  'holidays-celebrations': ['holiday', 'birthday', 'party', 'celebrate', 'christmas', 'halloween', 'thanksgiving'],
+};
+
+function scoreTagMatch(tag: string, text: string, availableTags: string[]): number {
+  // Only score if this tag exists in the database
+  if (!availableTags.includes(tag)) return 0;
+  
+  const lowerText = text.toLowerCase();
+  const keywords = TAG_KEYWORD_MAP[tag] || [];
+  
+  let score = 0;
+  
+  // Check if tag name itself appears in text
+  if (lowerText.includes(tag.toLowerCase())) {
+    score += 10;
+  }
+  
+  // Check keywords
+  for (const keyword of keywords) {
+    if (lowerText.includes(keyword)) {
+      score += 5;
+    }
+  }
+  
+  return score;
+}
+
+function suggestTagsFromKeywords(
+  title: string,
+  description: string,
+  availableTags: string[]
+): { tags: string[]; explanation: string } {
+  const text = `${title} ${description}`;
+  
+  // Score all tags
+  const tagScores: Array<{ tag: string; score: number }> = [];
+  
+  // Score known tag patterns
+  for (const tag of Object.keys(TAG_KEYWORD_MAP)) {
+    const score = scoreTagMatch(tag, text, availableTags);
+    if (score > 0) {
+      tagScores.push({ tag, score });
+    }
+  }
+  
+  // Also check if any available tags match directly in the text
+  for (const tag of availableTags) {
+    if (!tagScores.find(t => t.tag === tag)) {
+      const lowerText = text.toLowerCase();
+      const lowerTag = tag.toLowerCase();
+      
+      // Direct match
+      if (lowerText.includes(lowerTag)) {
+        tagScores.push({ tag, score: 8 });
+      }
+      
+      // Partial word match (for compound tags like "outdoor-adventures")
+      const tagWords = tag.split('-');
+      let partialScore = 0;
+      for (const word of tagWords) {
+        if (lowerText.includes(word)) {
+          partialScore += 3;
+        }
+      }
+      if (partialScore > 0) {
+        tagScores.push({ tag, score: partialScore });
+      }
+    }
+  }
+  
+  // Sort by score and take top 3
+  tagScores.sort((a, b) => b.score - a.score);
+  const topTags = tagScores.slice(0, 3).map(t => t.tag);
+  
+  if (topTags.length === 0) {
+    return {
+      tags: [],
+      explanation: 'No specific tags matched',
+    };
+  }
+  
+  return {
+    tags: topTags,
+    explanation: `Matched based on book content: ${topTags.join(', ')}`,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { title, author, isbn } = await request.json();
@@ -291,6 +254,18 @@ export async function POST(request: NextRequest) {
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
+
+    // Fetch available tags from database
+    const { data: tagsData, error: tagsError } = await supabase
+      .from('tags')
+      .select('name')
+      .order('name');
+
+    if (tagsError) {
+      console.error('Error fetching tags:', tagsError);
+    }
+
+    const availableTags = tagsData?.map((t) => t.name) || [];
 
     // Fetch book description from Google Books
     let description = '';
@@ -315,14 +290,19 @@ export async function POST(request: NextRequest) {
     // Get age category suggestion
     const ageSuggestion = suggestAgeCategory(title, author || '', description);
 
-    // Get theme suggestion
-    const themeSuggestion = suggestThemeFromKeywords(title, description);
+    // Get tag suggestions using keyword matching
+    const tagSuggestion = suggestTagsFromKeywords(
+      title,
+      description,
+      availableTags
+    );
 
     return NextResponse.json({
       ageGroup: ageSuggestion.category,
       ageExplanation: ageSuggestion.explanation,
-      theme: themeSuggestion.theme,
-      themeExplanation: themeSuggestion.explanation,
+      theme: tagSuggestion.tags.join(', '), // Join multiple tags with comma
+      themeExplanation: tagSuggestion.explanation,
+      tags: tagSuggestion.tags, // Also return as array for flexibility
     });
   } catch (error) {
     console.error('Error in suggest-age-theme API:', error);
