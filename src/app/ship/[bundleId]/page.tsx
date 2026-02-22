@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { getBundleDetails } from '@/lib/queries';
+import type { Bundle, BundleItem } from '@/lib/types';
 import { supabaseServer } from '@/lib/supabaseServer';
 import MarkAsShippedButton from '@/components/MarkAsShippedButton';
 import HomeButton from '@/components/HomeButton';
@@ -18,42 +18,116 @@ interface ShipPageProps {
 export default async function ShipBundle({ params }: ShipPageProps) {
   const bundleId = params.bundleId;
 
-  let bundle;
-  let items;
-  let member: { name?: string | null; email?: string | null } | null = null;
+  let bundle: Bundle | null = null;
+let items: BundleItem[] = [];
+let member: { name?: string | null; email?: string | null } | null = null;
+let loadError: string | null = null;
 
   try {
-    // Get bundle and items (from shipments + shipment_books)
     const result = await getBundleDetails(bundleId);
     bundle = result.bundle;
     items = result.items;
 
-    // Member is optional (test shipments may have null member_id)
     if (bundle.member_id) {
       const supabase = supabaseServer();
-      const { data: memberData, error: memberError } = await supabase
+      const { data: memberData } = await supabase
         .from('members')
         .select('name, email')
         .eq('id', bundle.member_id)
         .maybeSingle();
 
-      if (!memberError && memberData) {
+      if (memberData) {
         member = memberData;
       }
     }
   } catch (error) {
     console.error('Error loading bundle:', error);
-    notFound();
-  }
-
-  if (!bundle) {
-    notFound();
+    loadError = 'This shipment could not be loaded. It may be a test row or no longer exist.';
   }
 
   const displayName = member?.name || 'Member';
   const displayEmail = member?.email || '—';
   const bookCount = items.length;
-  const totalWeight = (bookCount * 0.5).toFixed(1); // rough estimate
+  const totalWeight = (bookCount * 0.5).toFixed(1);
+
+  // If we truly have no bundle data, show a friendly error page instead of a 404
+  if (!bundle) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          padding: spacing.xl,
+          maxWidth: '800px',
+          margin: '0 auto',
+        }}
+      >
+        <header
+          style={{
+            marginBottom: spacing.lg,
+            paddingBottom: spacing.sm,
+            borderBottom: `3px solid ${colors.secondary}`,
+          }}
+        >
+          <Link
+            href="/work/shipping"
+            style={{
+              display: 'inline-block',
+              color: colors.secondary,
+              textDecoration: 'none',
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+              marginBottom: spacing.sm,
+            }}
+          >
+            ← Back to shipping queue
+          </Link>
+          <h1
+            style={{
+              fontFamily: typography.fontFamily.heading,
+              fontSize: typography.fontSize['2xl'],
+              fontWeight: typography.fontWeight.bold,
+              color: colors.secondary,
+              margin: 0,
+            }}
+          >
+            Shipment not available
+          </h1>
+        </header>
+
+        <div
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: radii.md,
+            border: `2px solid ${colors.border}`,
+            padding: spacing.lg,
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              marginBottom: spacing.sm,
+              fontSize: typography.fontSize.sm,
+              color: colors.text,
+            }}
+          >
+            This shipment could not be found or loaded. It may be a test row, or it may have
+            been removed.
+          </p>
+          {loadError && (
+            <p
+              style={{
+                margin: 0,
+                fontSize: typography.fontSize.xs,
+                color: colors.textLight,
+              }}
+            >
+              {loadError}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
