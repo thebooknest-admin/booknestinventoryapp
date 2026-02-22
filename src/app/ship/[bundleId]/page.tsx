@@ -12,12 +12,12 @@ interface ShipPageProps {
     bundleId: string;
   };
 }
+
 export default async function ShipBundle({ params }: ShipPageProps) {
   const bundleId = params.bundleId;
-
   const supabase = supabaseServer();
 
-  // Load shipment
+  // Load shipment row
   const { data: shipment, error: shipmentError } = await supabase
     .from('shipments')
     .select('*')
@@ -27,6 +27,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
   if (shipmentError) {
     console.error('Error loading shipment:', shipmentError);
   }
+
   // If there is no shipment at all, show a friendly message
   if (!shipment) {
     return (
@@ -70,6 +71,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             Shipment not available
           </h1>
         </header>
+
         <div
           style={{
             backgroundColor: colors.surface,
@@ -256,7 +258,10 @@ export default async function ShipBundle({ params }: ShipPageProps) {
               gap: spacing.lg,
             }}
           >
-            <SummaryField label="Order #" value={shipment.order_number || '—'} />
+            <SummaryField
+              label="Order #"
+              value={shipment.order_number || '—'}
+            />
             <SummaryField label="Books" value={`${books}`} emphasize />
             <SummaryField label="Est. weight" value={`${totalWeight} lbs`} />
             <SummaryField label="Status" value={shipment.status} />
@@ -340,6 +345,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     </div>
   );
 }
+
 function SummaryField({
   label,
   value,
