@@ -10,299 +10,261 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 interface ShipPageProps {
-  params: Promise<{
+  params: {
     bundleId: string;
-  }>;
+  };
 }
 
-export default async function ShipBundle(props: ShipPageProps) {
-  // Await params in Next.js 15
-  const params = await props.params;
-  
+export default async function ShipBundle({ params }: ShipPageProps) {
+  const bundleId = params.bundleId;
+
   let bundle;
   let items;
-  let member;
+  let member: { name?: string | null; email?: string | null } | null = null;
 
   try {
-    // Get bundle and items
-    const result = await getBundleDetails(params.bundleId);
+    // Get bundle and items (from shipments + shipment_books)
+    const result = await getBundleDetails(bundleId);
     bundle = result.bundle;
     items = result.items;
 
-    // Get member details
-    const supabase = supabaseServer();
-    const { data: memberData } = await supabase
-      .from('members')
-      .select('first_name, last_name, email')
-      .eq('id', bundle.member_id)
-      .single();
-    
-    member = memberData;
+    // Member is optional (test shipments may have null member_id)
+    if (bundle.member_id) {
+      const supabase = supabaseServer();
+      const { data: memberData, error: memberError } = await supabase
+        .from('members')
+        .select('name, email')
+        .eq('id', bundle.member_id)
+        .maybeSingle();
+
+      if (!memberError && memberData) {
+        member = memberData;
+      }
+    }
   } catch (error) {
     console.error('Error loading bundle:', error);
     notFound();
   }
 
-  if (!bundle || !member) {
+  if (!bundle) {
     notFound();
   }
 
-  // Calculate total weight (assuming 0.5 lbs per book)
-  const totalWeight = (items.length * 0.5).toFixed(1);
+  const displayName = member?.name || 'Member';
+  const displayEmail = member?.email || '—';
+  const bookCount = items.length;
+  const totalWeight = (bookCount * 0.5).toFixed(1); // rough estimate
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      padding: spacing.xl,
-      maxWidth: '1000px',
-      margin: '0 auto',
-    }}>
-      <header style={{
-        marginBottom: spacing.xl,
-        paddingBottom: spacing.lg,
-        borderBottom: `3px solid ${colors.secondary}`,
-      }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        padding: spacing.xl,
+        maxWidth: '1000px',
+        margin: '0 auto',
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          marginBottom: spacing.xl,
+          paddingBottom: spacing.lg,
+          borderBottom: `3px solid ${colors.secondary}`,
+        }}
+      >
         <Link
           href="/work/shipping"
           style={{
             display: 'inline-block',
             color: colors.secondary,
             textDecoration: 'none',
-            fontSize: typography.fontSize.base,
+            fontSize: typography.fontSize.sm,
             fontWeight: typography.fontWeight.semibold,
             marginBottom: spacing.sm,
           }}
         >
-          ← SHIPPING QUEUE
+          ← Back to shipping queue
         </Link>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <h1 style={{
-            fontFamily: typography.fontFamily.heading,
-            fontSize: typography.fontSize['3xl'],
-            fontWeight: typography.fontWeight.bold,
-            color: colors.secondary,
-            margin: 0,
-          }}>
-            BUNDLE-{params.bundleId.slice(0, 8).toUpperCase()}
-          </h1>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: spacing.md,
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                fontFamily: typography.fontFamily.heading,
+                fontSize: typography.fontSize['3xl'],
+                fontWeight: typography.fontWeight.bold,
+                color: colors.secondary,
+                margin: 0,
+              }}
+            >
+              Ship bundle
+            </h1>
+            <p
+              style={{
+                margin: 0,
+                marginTop: spacing.xs,
+                fontSize: typography.fontSize.sm,
+                color: colors.textLight,
+              }}
+            >
+              Review the books, confirm packing, then mark this bundle as shipped.
+            </p>
+          </div>
           <HomeButton />
         </div>
       </header>
 
       {/* Shipping Details */}
-      <div style={{
-        backgroundColor: colors.surface,
-        border: `3px solid ${colors.border}`,
-        borderRadius: radii.md,
-        padding: spacing.xl,
-        marginBottom: spacing.xl,
-      }}>
-        <h2 style={{
-          fontSize: typography.fontSize.xl,
-          fontWeight: typography.fontWeight.bold,
-          color: colors.text,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginTop: 0,
-          marginBottom: spacing.lg,
-        }}>
-          Order Information
+      <section
+        style={{
+          backgroundColor: colors.surface,
+          border: `2px solid ${colors.border}`,
+          borderRadius: radii.md,
+          padding: spacing.lg,
+          marginBottom: spacing.xl,
+        }}
+      >
+        <h2
+          style={{
+            fontSize: typography.fontSize.lg,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.text,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            marginTop: 0,
+            marginBottom: spacing.md,
+          }}
+        >
+          Order summary
         </h2>
 
-        <div style={{
-          display: 'grid',
-          gap: spacing.lg,
-        }}>
-          <div>
-            <div style={{
-              fontSize: typography.fontSize.sm,
-              fontWeight: typography.fontWeight.bold,
-              color: colors.textLight,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: spacing.xs,
-            }}>
-              Customer
-            </div>
-            <div style={{
-              fontSize: typography.fontSize.xl,
-              fontWeight: typography.fontWeight.semibold,
-              color: colors.text,
-            }}>
-              {member.first_name} {member.last_name}
-            </div>
-            <div style={{
-              fontSize: typography.fontSize.sm,
-              color: colors.textLight,
-              marginTop: spacing.xs,
-            }}>
-              {member.email}
-            </div>
-          </div>
-
-          <div style={{
+        <div
+          style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
             gap: spacing.lg,
-          }}>
-            <div>
-              <div style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: typography.fontSize.xs,
+                fontWeight: typography.fontWeight.semibold,
                 color: colors.textLight,
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em',
+                letterSpacing: '0.08em',
                 marginBottom: spacing.xs,
-              }}>
-                Books
-              </div>
-              <div style={{
-                fontSize: typography.fontSize['2xl'],
-                fontWeight: typography.fontWeight.bold,
-                color: colors.text,
-              }}>
-                {items.length}
-              </div>
+              }}
+            >
+              Member
             </div>
-
-            <div>
-              <div style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                color: colors.textLight,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: spacing.xs,
-              }}>
-                Est. Weight
-              </div>
-              <div style={{
-                fontSize: typography.fontSize['2xl'],
-                fontWeight: typography.fontWeight.bold,
-                color: colors.text,
-              }}>
-                {totalWeight} lbs
-              </div>
-            </div>
-
-            <div>
-              <div style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                color: colors.textLight,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: spacing.xs,
-              }}>
-                Status
-              </div>
-              <div>
-                <span style={{
-                  display: 'inline-block',
-                  padding: `${spacing.xs} ${spacing.sm}`,
-                  backgroundColor: colors.sageMist,
-                  color: colors.deepCocoa,
-                  fontSize: typography.fontSize.sm,
-                  fontWeight: typography.fontWeight.bold,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  borderRadius: radii.sm,
-                }}>
-                  {bundle.status}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {bundle.ship_by && (
-            <div>
-              <div style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                color: colors.textLight,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: spacing.xs,
-              }}>
-                Ship By Date
-              </div>
-              <div style={{
-                fontSize: typography.fontSize.lg,
+            <div
+              style={{
+                fontSize: typography.fontSize.base,
                 fontWeight: typography.fontWeight.semibold,
                 color: colors.text,
-              }}>
-                {new Date(bundle.ship_by).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
-              </div>
+              }}
+            >
+              {displayName}
             </div>
-          )}
+            <div
+              style={{
+                fontSize: typography.fontSize.sm,
+                color: colors.textLight,
+                marginTop: spacing.xs,
+                fontFamily: 'monospace',
+              }}
+            >
+              {displayEmail}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: spacing.lg,
+            }}
+          >
+            <SummaryField label="Books" value={`${bookCount}`} emphasize />
+            <SummaryField label="Est. weight" value={`${totalWeight} lbs`} />
+            <SummaryField label="Status" value={bundle.status} />
+          </div>
         </div>
-      </div>
+      </section>
 
       {/* Books in Bundle */}
-      <div style={{
-        backgroundColor: colors.surface,
-        border: `3px solid ${colors.border}`,
-        borderRadius: radii.md,
-        padding: spacing.xl,
-        marginBottom: spacing.xl,
-      }}>
-        <h2 style={{
-          fontSize: typography.fontSize.xl,
-          fontWeight: typography.fontWeight.bold,
-          color: colors.text,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginTop: 0,
-          marginBottom: spacing.lg,
-        }}>
-          Books in This Bundle
+      <section
+        style={{
+          backgroundColor: colors.surface,
+          border: `2px solid ${colors.border}`,
+          borderRadius: radii.md,
+          padding: spacing.lg,
+          marginBottom: spacing.xl,
+        }}
+      >
+        <h2
+          style={{
+            fontSize: typography.fontSize.lg,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.text,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            marginTop: 0,
+            marginBottom: spacing.md,
+          }}
+        >
+          Books in this bundle
         </h2>
 
         {items.length === 0 ? (
-          <div style={{
-            textAlign: 'center',
-            padding: spacing.xl,
-            color: colors.textLight,
-          }}>
-            <p style={{ margin: 0 }}>No books have been picked for this bundle yet.</p>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: spacing.lg,
+              color: colors.textLight,
+              fontSize: typography.fontSize.sm,
+            }}
+          >
+            No books have been picked for this bundle yet.
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gap: spacing.md,
-          }}>
+          <div
+            style={{
+              display: 'grid',
+              gap: spacing.sm,
+            }}
+          >
             {items.map((item, index) => (
               <div
                 key={item.id}
                 style={{
                   display: 'flex',
                   gap: spacing.md,
-                  padding: spacing.md,
+                  padding: spacing.sm,
                   backgroundColor: index % 2 === 0 ? colors.cream : 'white',
-                  border: `2px solid ${colors.border}`,
                   borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
                 }}
               >
-                <div style={{
-                  width: '60px',
-                  height: '80px',
-                  backgroundColor: colors.border,
-                  borderRadius: radii.sm,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  overflow: 'hidden',
-                }}>
+                <div
+                  style={{
+                    width: 56,
+                    height: 80,
+                    backgroundColor: colors.border,
+                    borderRadius: radii.sm,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                  }}
+                >
                   {item.cover_image_url ? (
                     <img
                       src={item.cover_image_url}
@@ -318,118 +280,178 @@ export default async function ShipBundle(props: ShipPageProps) {
                   )}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <h3 style={{
-                    fontSize: typography.fontSize.base,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.text,
-                    margin: 0,
-                    marginBottom: spacing.xs,
-                  }}>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.sm,
+                      fontWeight: typography.fontWeight.semibold,
+                      color: colors.text,
+                      marginBottom: spacing.xs,
+                    }}
+                  >
                     {item.title}
-                  </h3>
-                  <p style={{
-                    fontSize: typography.fontSize.sm,
-                    color: colors.textLight,
-                    margin: 0,
-                    marginBottom: spacing.xs,
-                  }}>
-                    by {item.author}
-                  </p>
-                  <div style={{
-                    display: 'flex',
-                    gap: spacing.sm,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                  }}>
-                    <span style={{
-                      fontSize: typography.fontSize.xs,
-                      color: colors.textLight,
-                      textTransform: 'uppercase',
-                      fontFamily: 'monospace',
-                    }}>
+                  </div>
+                  {item.author && (
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.textLight,
+                        marginBottom: spacing.xs,
+                      }}
+                    >
+                      by {item.author}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: spacing.sm,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.textLight,
+                        fontFamily: 'monospace',
+                      }}
+                    >
                       SKU: {item.sku}
                     </span>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: `2px ${spacing.xs}`,
-                      backgroundColor: colors.sageMist,
-                      color: colors.deepCocoa,
-                      fontSize: typography.fontSize.xs,
-                      fontWeight: typography.fontWeight.bold,
-                      borderRadius: radii.sm,
-                      textTransform: 'uppercase',
-                    }}>
-                      {item.age_group.replace(/_/g, ' ')}
-                    </span>
+                    {item.age_group && (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: `2px ${spacing.xs}`,
+                          backgroundColor: colors.sageMist,
+                          color: colors.deepCocoa,
+                          fontSize: typography.fontSize.xs,
+                          fontWeight: typography.fontWeight.bold,
+                          borderRadius: radii.sm,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {item.age_group.replace(/_/g, ' ')}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Shipping Action */}
-      <div style={{
-        backgroundColor: colors.surface,
-        border: `3px solid ${colors.border}`,
-        borderRadius: radii.md,
-        padding: spacing.xl,
-        marginBottom: spacing.xl,
-      }}>
-        <h2 style={{
-          fontSize: typography.fontSize.xl,
-          fontWeight: typography.fontWeight.bold,
-          color: colors.text,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginTop: 0,
-          marginBottom: spacing.md,
-        }}>
-          Mark as Shipped
-        </h2>
-        <p style={{
-          fontSize: typography.fontSize.base,
-          color: colors.textLight,
-          margin: 0,
+      <section
+        style={{
+          backgroundColor: colors.surface,
+          border: `2px solid ${colors.border}`,
+          borderRadius: radii.md,
+          padding: spacing.lg,
           marginBottom: spacing.lg,
-        }}>
-          Enter the tracking number and mark this bundle as shipped. The member will be notified.
+        }}
+      >
+        <h2
+          style={{
+            fontSize: typography.fontSize.lg,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.text,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            marginTop: 0,
+            marginBottom: spacing.sm,
+          }}
+        >
+          Mark as shipped
+        </h2>
+        <p
+          style={{
+            fontSize: typography.fontSize.sm,
+            color: colors.textLight,
+            margin: 0,
+            marginBottom: spacing.md,
+          }}
+        >
+          Enter the tracking number and mark this bundle as shipped.
         </p>
 
-        <MarkAsShippedButton bundleId={params.bundleId} />
-      </div>
+        <MarkAsShippedButton bundleId={bundleId} />
+      </section>
 
       {/* Shipping Checklist */}
-      <div style={{
-        backgroundColor: colors.goldenHoney + '20',
-        border: `2px solid ${colors.goldenHoney}`,
-        borderRadius: radii.md,
-        padding: spacing.lg,
-      }}>
-        <h3 style={{
-          fontSize: typography.fontSize.lg,
-          fontWeight: typography.fontWeight.bold,
-          color: colors.deepCocoa,
-          margin: 0,
-          marginBottom: spacing.md,
-        }}>
-          📋 Shipping Checklist
+      <section
+        style={{
+          backgroundColor: colors.goldenHoney + '20',
+          border: `2px solid ${colors.goldenHoney}`,
+          borderRadius: radii.md,
+          padding: spacing.lg,
+        }}
+      >
+        <h3
+          style={{
+            fontSize: typography.fontSize.sm,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.deepCocoa,
+            margin: 0,
+            marginBottom: spacing.sm,
+          }}
+        >
+          Shipping checklist
         </h3>
-        <ul style={{
-          margin: 0,
-          paddingLeft: spacing.lg,
-          color: colors.text,
-          fontSize: typography.fontSize.base,
-          lineHeight: typography.lineHeight.relaxed,
-        }}>
-          <li style={{ marginBottom: spacing.sm }}>✓ Verify all {items.length} books are packed</li>
-          <li style={{ marginBottom: spacing.sm }}>✓ Include packing slip with bundle ID</li>
-          <li style={{ marginBottom: spacing.sm }}>✓ Seal package securely</li>
-          <li style={{ marginBottom: spacing.sm }}>✓ Apply shipping label with correct address</li>
-          <li style={{ marginBottom: spacing.sm }}>✓ Enter tracking number above</li>
-          <li>✓ Drop off at carrier or schedule pickup</li>
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: spacing.lg,
+            color: colors.text,
+            fontSize: typography.fontSize.sm,
+            lineHeight: typography.lineHeight.relaxed,
+          }}
+        >
+          <li>Verify all books are packed</li>
+          <li>Include packing slip</li>
+          <li>Seal package securely</li>
+          <li>Apply shipping label with correct address</li>
+          <li>Enter tracking number above</li>
         </ul>
+      </section>
+    </div>
+  );
+}
+
+function SummaryField({
+  label,
+  value,
+  emphasize,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: typography.fontSize.xs,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: colors.textLight,
+          marginBottom: spacing.xs,
+          fontWeight: typography.fontWeight.semibold,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: emphasize ? typography.fontSize['2xl'] : typography.fontSize.sm,
+          fontWeight: emphasize
+            ? typography.fontWeight.bold
+            : typography.fontWeight.semibold,
+          color: colors.text,
+        }}
+      >
+        {value}
       </div>
     </div>
   );
