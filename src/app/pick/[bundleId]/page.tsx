@@ -70,7 +70,6 @@ const formatDate = (value: string) => {
     year: 'numeric',
   }).format(date);
 };
-
 const parseBookToFind = (bookToFind: string | null) => {
   if (!bookToFind) {
     return { title: 'Unknown title', author: '' };
@@ -96,9 +95,7 @@ const mapPickListRow = (item: PickListItem): PickListRow => {
 
 export default function PickBundle() {
   const params = useParams<{ bundleId: string }>();
-  const bundleId = Array.isArray(params.bundleId)
-    ? params.bundleId[0]
-    : params.bundleId;
+  const bundleId = Array.isArray(params.bundleId) ? params.bundleId[0] : params.bundleId;
   const router = useRouter();
   const [items, setItems] = useState<PickListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,6 +163,7 @@ export default function PickBundle() {
   const tierKey = shipmentSummary?.tier ? formatTierKey(shipmentSummary.tier) : '';
   const targetBookCount = tierKey ? TIER_BOOK_COUNTS[tierKey] : undefined;
   const displayBookCount = targetBookCount ?? (totalCount > 0 ? totalCount : undefined);
+  const progressPct = totalCount > 0 ? Math.round((pickedCount / totalCount) * 100) : 0;
 
   const handleScan = async (item: PickListRow) => {
     if (item.isPicked) return;
@@ -187,7 +185,12 @@ export default function PickBundle() {
       setItems((prev) =>
         prev.map((row) =>
           row.book_title_id === item.book_title_id
-            ? { ...row, isPicked: true, status: '✅ PICKED', scanned_at: new Date().toISOString() }
+            ? {
+                ...row,
+                isPicked: true,
+                status: '✅ PICKED',
+                scanned_at: new Date().toISOString(),
+              }
             : row
         )
       );
@@ -272,17 +275,22 @@ export default function PickBundle() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      padding: spacing.xl,
-      maxWidth: '1400px',
-      margin: '0 auto',
-    }}>
-      <header style={{
-        marginBottom: spacing.xl,
-        paddingBottom: spacing.lg,
-        borderBottom: `3px solid ${colors.primary}`,
-      }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        padding: spacing.xl,
+        maxWidth: '1400px',
+        margin: '0 auto',
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          marginBottom: spacing.xl,
+          paddingBottom: spacing.lg,
+          borderBottom: `3px solid ${colors.primary}`,
+        }}
+      >
         <Link
           href="/work/picking"
           style={{
@@ -294,189 +302,252 @@ export default function PickBundle() {
             marginBottom: spacing.sm,
           }}
         >
-          ← PICKING QUEUE
+          ← Back to picking queue
         </Link>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <h1 style={{
-            fontFamily: typography.fontFamily.heading,
-            fontSize: typography.fontSize['3xl'],
-            fontWeight: typography.fontWeight.bold,
-            color: colors.primary,
-            margin: 0,
-          }}>
-            PICK LIST {shipmentSummary?.orderNumber ? `#${shipmentSummary.orderNumber}` : '—'}
-          </h1>
-          <div style={{
-            fontSize: typography.fontSize['2xl'],
-            fontWeight: typography.fontWeight.bold,
-            color: allPicked ? colors.sageMist : colors.primary,
-          }}>
-            {pickedCount} / {totalCount}
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            gap: spacing.lg,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                fontFamily: typography.fontFamily.heading,
+                fontSize: typography.fontSize['3xl'],
+                fontWeight: typography.fontWeight.bold,
+                color: colors.primary,
+                margin: 0,
+                marginBottom: spacing.xs,
+              }}
+            >
+              Start picking
+            </h1>
+            <p
+              style={{
+                margin: 0,
+                fontSize: typography.fontSize.sm,
+                color: colors.textLight,
+              }}
+            >
+              Scan each book as you pull it from the bins. When all are picked, move this
+              shipment to shipping.
+            </p>
+          </div>
+
+          {/* Progress summary */}
+          <div
+            style={{
+              minWidth: '260px',
+              padding: spacing.md,
+              borderRadius: radii.md,
+              border: `2px solid ${colors.border}`,
+              backgroundColor: colors.surface,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                marginBottom: spacing.xs,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  fontWeight: typography.fontWeight.semibold,
+                }}
+              >
+                Pick progress
+              </span>
+              <span
+                style={{
+                  fontSize: typography.fontSize.sm,
+                  color: colors.textLight,
+                }}
+              >
+                {pickedCount}/{totalCount} books
+              </span>
+            </div>
+            <div
+              style={{
+                width: '100%',
+                height: 10,
+                borderRadius: radii.full,
+                backgroundColor: colors.cream,
+                overflow: 'hidden',
+                marginBottom: spacing.xs,
+              }}
+            >
+              <div
+                style={{
+                  width: `${progressPct}%`,
+                  height: '100%',
+                  backgroundColor: allPicked ? colors.sageMist : colors.primary,
+                  transition: 'width 120ms ease-out',
+                }}
+              />
+            </div>
+            <div
+              style={{
+                fontSize: typography.fontSize.xs,
+                color: colors.textLight,
+              }}
+            >
+              {allPicked
+                ? 'All books picked. You can complete this shipment.'
+                : 'Keep scanning until all books are picked.'}
+            </div>
           </div>
         </div>
       </header>
 
-      <section style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: spacing.md,
-        marginBottom: spacing.xl,
-        padding: spacing.lg,
-        borderRadius: radii.md,
-        backgroundColor: colors.surface,
-        border: `2px solid ${colors.border}`,
-      }}>
-        <div>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            fontWeight: typography.fontWeight.bold,
-          }}>
-            Order #
-          </div>
-          <div style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.primary,
-            fontFamily: 'monospace',
-          }}>
-            {shipmentSummary?.orderNumber ? `#${shipmentSummary.orderNumber}` : '—'}
-          </div>
-        </div>
-        <div>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            fontWeight: typography.fontWeight.bold,
-          }}>
+      {/* Summary cards */}
+      <section
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
+          gap: spacing.lg,
+          marginBottom: spacing.xl,
+        }}
+      >
+        {/* Member card */}
+        <div
+          style={{
+            padding: spacing.lg,
+            borderRadius: radii.md,
+            backgroundColor: colors.surface,
+            border: `2px solid ${colors.border}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: typography.fontSize.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: colors.textLight,
+              marginBottom: spacing.sm,
+              fontWeight: typography.fontWeight.semibold,
+            }}
+          >
             Member
           </div>
-          <div style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-          }}>
+          <div
+            style={{
+              fontSize: typography.fontSize.lg,
+              fontWeight: typography.fontWeight.bold,
+              color: colors.text,
+              marginBottom: spacing.xs,
+            }}
+          >
             {shipmentSummary?.memberName ?? '—'}
           </div>
-        </div>
-        <div>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            fontWeight: typography.fontWeight.bold,
-          }}>
-            Tier
-          </div>
-          <div style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-          }}>
-            {shipmentSummary?.tier ?? '—'}
-          </div>
-        </div>
-        <div>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            fontWeight: typography.fontWeight.bold,
-          }}>
-            Book Quantity
-          </div>
-          <div style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-          }}>
-            {displayBookCount ? `${displayBookCount} books` : '—'}
-          </div>
-        </div>
-        <div>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            fontWeight: typography.fontWeight.bold,
-          }}>
-            Order Date
-          </div>
-          <div style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-          }}>
-            {shipmentSummary?.createdAt ? formatDate(shipmentSummary.createdAt) : '—'}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: spacing.sm,
+              fontSize: typography.fontSize.xs,
+            }}
+          >
+            <span
+              style={{
+                padding: `${spacing.xs} ${spacing.sm}`,
+                borderRadius: radii.full,
+                border: `1px solid ${colors.border}`,
+                backgroundColor: colors.cream,
+              }}
+            >
+              Order {shipmentSummary?.orderNumber ? `#${shipmentSummary.orderNumber}` : '—'}
+            </span>
+            <span
+              style={{
+                padding: `${spacing.xs} ${spacing.sm}`,
+                borderRadius: radii.full,
+                border: `1px solid ${colors.border}`,
+                backgroundColor: colors.cream,
+              }}
+            >
+              Tier: {shipmentSummary?.tier ?? '—'}
+            </span>
+            <span
+              style={{
+                padding: `${spacing.xs} ${spacing.sm}`,
+                borderRadius: radii.full,
+                border: `1px solid ${colors.border}`,
+                backgroundColor: colors.cream,
+              }}
+            >
+              Books: {displayBookCount ? `${displayBookCount}` : '—'}
+            </span>
           </div>
         </div>
-        <div>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            fontWeight: typography.fontWeight.bold,
-          }}>
-            Ship By (Tue/Fri)
-          </div>
-          <div style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.text,
-          }}>
-            {shipmentSummary?.createdAt ? getShipByDate(shipmentSummary.createdAt) : '—'}
-          </div>
+        {/* Shipment details */}
+        <div
+          style={{
+            padding: spacing.lg,
+            borderRadius: radii.md,
+            backgroundColor: colors.surface,
+            border: `2px solid ${colors.border}`,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: spacing.md,
+          }}
+        >
+          <SummaryField
+            label="Order date"
+            value={shipmentSummary?.createdAt ? formatDate(shipmentSummary.createdAt) : '—'}
+          />
+          <SummaryField
+            label="Ship by (Tue/Fri)"
+            value={shipmentSummary?.createdAt ? getShipByDate(shipmentSummary.createdAt) : '—'}
+          />
+          <SummaryField label="Books to pick" value={totalCount ? `${totalCount}` : '—'} />
+          <SummaryField label="Picked so far" value={`${pickedCount}`} />
         </div>
       </section>
 
       {/* Scan Input */}
-      <div style={{
-        marginBottom: spacing.lg,
-        padding: spacing.md,
-        borderRadius: radii.md,
-        backgroundColor: colors.surface,
-        border: `2px solid ${colors.border}`,
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: spacing.md,
-      }}>
+      <div
+        style={{
+          marginBottom: spacing.lg,
+          padding: spacing.md,
+          borderRadius: radii.md,
+          backgroundColor: colors.surface,
+          border: `2px solid ${colors.border}`,
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          gap: spacing.md,
+        }}
+      >
         <div style={{ flex: '1 1 260px' }}>
-          <div style={{
-            fontSize: typography.fontSize.sm,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.textLight,
-            marginBottom: spacing.xs,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}>
-            Scan book barcode
-          </div>
+          <label
+            style={{
+              display: 'block',
+              fontSize: typography.fontSize.xs,
+              fontWeight: typography.fontWeight.bold,
+              color: colors.textLight,
+              marginBottom: spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            Scan book
+          </label>
           <input
             value={scanInput}
             onChange={(event) => {
               setScanInput(event.target.value);
-              if (error) {
-                setError(null);
-              }
+              if (error) setError(null);
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
@@ -491,9 +562,20 @@ export default function PickBundle() {
               borderRadius: radii.sm,
               border: `2px solid ${colors.border}`,
               fontSize: typography.fontSize.base,
+              fontFamily: 'monospace',
             }}
           />
+          <div
+            style={{
+              marginTop: spacing.xs,
+              fontSize: typography.fontSize.xs,
+              color: colors.textLight,
+            }}
+          >
+            Scanner should drop the code here and press Enter.
+          </div>
         </div>
+
         <button
           onClick={handleScanSubmit}
           disabled={!scanInput.trim()}
@@ -502,12 +584,12 @@ export default function PickBundle() {
             backgroundColor: scanInput.trim() ? colors.primary : colors.border,
             color: scanInput.trim() ? colors.cream : colors.textLight,
             border: `2px solid ${scanInput.trim() ? colors.primary : colors.border}`,
-            fontSize: typography.fontSize.base,
+            fontSize: typography.fontSize.sm,
             fontWeight: typography.fontWeight.bold,
             textTransform: 'uppercase',
             borderRadius: radii.sm,
             cursor: scanInput.trim() ? 'pointer' : 'not-allowed',
-            height: 'fit-content',
+            minWidth: 120,
           }}
         >
           Scan
@@ -518,125 +600,139 @@ export default function PickBundle() {
           style={{
             padding: `${spacing.sm} ${spacing.lg}`,
             backgroundColor: colors.surface,
-            color: colors.primary,
+            color: loading || items.length === 0 ? colors.textLight : colors.primary,
             border: `2px solid ${colors.primary}`,
-            fontSize: typography.fontSize.base,
+            fontSize: typography.fontSize.sm,
             fontWeight: typography.fontWeight.bold,
             textTransform: 'uppercase',
             borderRadius: radii.sm,
             cursor: loading || items.length === 0 ? 'not-allowed' : 'pointer',
-            height: 'fit-content',
+            minWidth: 140,
           }}
         >
-          Clear Scans
+          Clear scans
         </button>
-        <div style={{
-          flex: '1 1 220px',
-          color: colors.textLight,
-          fontSize: typography.fontSize.sm,
-        }}>
-          Tip: scan the Book Nest SKU barcode (e.g., BN-FLED-0214) to mark it picked.
-        </div>
       </div>
 
-      {/* Pick List Table */}
+      {/* Alerts */}
       {error && (
-        <div style={{
-          marginBottom: spacing.lg,
-          padding: spacing.md,
-          borderRadius: radii.md,
-          backgroundColor: colors.cream,
-          border: `2px solid ${colors.primary}`,
-          color: colors.primary,
-          fontSize: typography.fontSize.base,
-          fontWeight: typography.fontWeight.semibold,
-        }}>
+        <div
+          style={{
+            marginBottom: spacing.lg,
+            padding: spacing.md,
+            borderRadius: radii.md,
+            backgroundColor: colors.cream,
+            border: `2px solid ${colors.primary}`,
+            color: colors.primary,
+            fontSize: typography.fontSize.sm,
+            fontWeight: typography.fontWeight.semibold,
+          }}
+        >
           {error}
         </div>
       )}
       {successMessage && (
-        <div style={{
-          marginBottom: spacing.lg,
-          padding: spacing.md,
-          borderRadius: radii.md,
-          backgroundColor: colors.sageMist,
-          border: `2px solid ${colors.success}`,
-          color: colors.deepCocoa,
-          fontSize: typography.fontSize.base,
-          fontWeight: typography.fontWeight.semibold,
-        }}>
+        <div
+          style={{
+            marginBottom: spacing.lg,
+            padding: spacing.md,
+            borderRadius: radii.md,
+            backgroundColor: colors.sageMist,
+            border: `2px solid ${colors.sageMist}`,
+            color: colors.deepCocoa,
+            fontSize: typography.fontSize.sm,
+            fontWeight: typography.fontWeight.semibold,
+          }}
+        >
           {successMessage}
         </div>
       )}
 
-      <div style={{
-        backgroundColor: colors.surface,
-        border: `2px solid ${colors.border}`,
-        borderRadius: radii.md,
-        overflow: 'hidden',
-        marginBottom: spacing.xl,
-      }}>
-        <table style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-        }}>
+      {/* Pick List Table */}
+      <div
+        style={{
+          backgroundColor: colors.surface,
+          border: `2px solid ${colors.border}`,
+          borderRadius: radii.md,
+          overflow: 'hidden',
+          marginBottom: spacing.xl,
+        }}
+      >
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+          }}
+        >
           <thead>
-            <tr style={{
-              backgroundColor: colors.primary,
-              color: colors.cream,
-            }}>
-              <th style={{
-                padding: spacing.md,
-                textAlign: 'left',
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                width: '15%',
-              }}>
+            <tr
+              style={{
+                backgroundColor: colors.primary,
+                color: colors.cream,
+              }}
+            >
+              <th
+                style={{
+                  padding: spacing.sm,
+                  textAlign: 'left',
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  width: '14%',
+                }}
+              >
                 Bin
               </th>
-              <th style={{
-                padding: spacing.md,
-                textAlign: 'left',
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                width: '18%',
-              }}>
+              <th
+                style={{
+                  padding: spacing.sm,
+                  textAlign: 'left',
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  width: '18%',
+                }}
+              >
                 Book Nest SKU
               </th>
-              <th style={{
-                padding: spacing.md,
-                textAlign: 'left',
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}>
+              <th
+                style={{
+                  padding: spacing.sm,
+                  textAlign: 'left',
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
                 Title
               </th>
-              <th style={{
-                padding: spacing.md,
-                textAlign: 'left',
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                width: '20%',
-              }}>
+              <th
+                style={{
+                  padding: spacing.sm,
+                  textAlign: 'left',
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  width: '22%',
+                }}
+              >
                 Instruction
               </th>
-              <th style={{
-                padding: spacing.md,
-                textAlign: 'center',
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                width: '14%',
-              }}>
+              <th
+                style={{
+                  padding: spacing.sm,
+                  textAlign: 'center',
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  width: '16%',
+                }}
+              >
                 Status
               </th>
             </tr>
@@ -672,146 +768,212 @@ export default function PickBundle() {
                 </td>
               </tr>
             )}
-            {!loading && items.map((item, index) => {
-              const isPicked = item.isPicked;
-              return (
-                <tr
-                  key={item.book_title_id}
-                  style={{
-                    borderBottom: `2px solid ${colors.border}`,
-                    backgroundColor: isPicked
-                      ? colors.sageMist
-                      : index % 2 === 0
-                      ? colors.surface
-                      : colors.cream,
-                    opacity: isPicked ? 0.7 : 1,
-                  }}
-                >
-                  <td style={{
-                    padding: spacing.md,
-                    fontSize: typography.fontSize.xl,
-                    fontWeight: typography.fontWeight.bold,
-                    color: colors.text,
-                    fontFamily: 'monospace',
-                  }}>
-                    {item.bin_code || item.bin_label || '—'}
-                  </td>
-                  <td style={{
-                    padding: spacing.md,
-                    fontSize: typography.fontSize.base,
-                    color: colors.primary,
-                    fontFamily: 'monospace',
-                    fontWeight: typography.fontWeight.bold,
-                  }}>
-                    {item.sku || '—'}
-                  </td>
-                  <td style={{
-                    padding: spacing.md,
-                    fontSize: typography.fontSize.base,
-                    color: colors.text,
-                  }}>
-                    <div style={{ fontWeight: typography.fontWeight.bold }}>{item.title}</div>
-                    {item.author && (
-                      <div style={{ color: colors.textLight, fontSize: typography.fontSize.sm }}>
-                        by {item.author}
+            {!loading &&
+              items.map((item, index) => {
+                const isPicked = item.isPicked;
+                return (
+                  <tr
+                    key={item.book_title_id}
+                    style={{
+                      borderBottom: `1px solid ${colors.border}`,
+                      backgroundColor: isPicked
+                        ? colors.sageMist
+                        : index % 2 === 0
+                        ? colors.surface
+                        : colors.cream,
+                      opacity: isPicked ? 0.8 : 1,
+                    }}
+                  >
+                    <td
+                      style={{
+                        padding: spacing.md,
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.text,
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {item.bin_code || item.bin_label || '—'}
+                    </td>
+                    <td
+                      style={{
+                        padding: spacing.md,
+                        fontSize: typography.fontSize.sm,
+                        color: colors.primary,
+                        fontFamily: 'monospace',
+                        fontWeight: typography.fontWeight.bold,
+                      }}
+                    >
+                      {item.sku || '—'}
+                    </td>
+                    <td
+                      style={{
+                        padding: spacing.md,
+                        fontSize: typography.fontSize.sm,
+                        color: colors.text,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: typography.fontWeight.semibold,
+                          marginBottom: item.author ? spacing.xs : 0,
+                        }}
+                      >
+                        {item.title}
                       </div>
-                    )}
-                  </td>
-                  <td style={{
-                    padding: spacing.md,
-                    fontSize: typography.fontSize.base,
-                    color: colors.text,
-                  }}>
-                    {item.instruction || 'Grab from bin'}
-                  </td>
-                  <td style={{
-                    padding: spacing.md,
-                    textAlign: 'center',
-                  }}>
-                    {isPicked ? (
-                      <span style={{
-                        display: 'inline-block',
-                        padding: `${spacing.xs} ${spacing.md}`,
-                        backgroundColor: colors.success,
-                        color: colors.deepCocoa,
+                      {item.author && (
+                        <div
+                          style={{
+                            color: colors.textLight,
+                            fontSize: typography.fontSize.xs,
+                          }}
+                        >
+                          by {item.author}
+                        </div>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        padding: spacing.md,
                         fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.bold,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        borderRadius: radii.sm,
-                      }}>
-                        ✓ Picked
-                      </span>
-                    ) : (
-                      <span style={{
-                        display: 'inline-block',
-                        padding: `${spacing.xs} ${spacing.md}`,
-                        backgroundColor:
-                          actionLoadingId === item.book_title_id ? colors.primary : colors.surface,
-                        color:
-                          actionLoadingId === item.book_title_id ? colors.cream : colors.textLight,
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.bold,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        border: `2px solid ${
-                          actionLoadingId === item.book_title_id ? colors.primary : colors.border
-                        }`,
-                        borderRadius: radii.sm,
-                        minWidth: '110px',
-                      }}>
-                        {actionLoadingId === item.book_title_id ? 'Scanning…' : 'Pending'}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+                        color: colors.text,
+                      }}
+                    >
+                      {item.instruction || 'Grab from bin'}
+                    </td>
+                    <td
+                      style={{
+                        padding: spacing.md,
+                        textAlign: 'center',
+                      }}
+                    >
+                      {isPicked ? (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: `${spacing.xs} ${spacing.md}`,
+                            backgroundColor: colors.sageMist,
+                            color: colors.deepCocoa,
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.bold,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            borderRadius: radii.full,
+                            minWidth: 90,
+                          }}
+                        >
+                          Picked
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: `${spacing.xs} ${spacing.md}`,
+                            backgroundColor:
+                              actionLoadingId === item.book_title_id
+                                ? colors.primary
+                                : colors.surface,
+                            color:
+                              actionLoadingId === item.book_title_id
+                                ? colors.cream
+                                : colors.textLight,
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.bold,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            border: `2px solid ${
+                              actionLoadingId === item.book_title_id
+                                ? colors.primary
+                                : colors.border
+                            }`,
+                            borderRadius: radii.full,
+                            minWidth: 110,
+                          }}
+                        >
+                          {actionLoadingId === item.book_title_id ? 'Scanning…' : 'Pending'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
 
       {/* Action Buttons */}
-      <div style={{
-        display: 'flex',
-        gap: spacing.md,
-        justifyContent: 'space-between',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: spacing.md,
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+        }}
+      >
         <Link
           href={`/pick-slip/${bundleId ?? ''}`}
           style={{
             display: 'inline-block',
-            padding: `${spacing.md} ${spacing.xl}`,
+            padding: `${spacing.sm} ${spacing.lg}`,
             backgroundColor: colors.surface,
             color: colors.primary,
-            border: `3px solid ${colors.primary}`,
+            border: `2px solid ${colors.primary}`,
             textDecoration: 'none',
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
+            fontSize: typography.fontSize.sm,
+            fontWeight: typography.fontWeight.semibold,
             textTransform: 'uppercase',
-            borderRadius: radii.md,
+            borderRadius: radii.sm,
           }}
         >
-          🖨 PRINT PICK SLIP
+          Print pick slip
         </Link>
 
         <button
           disabled={!allPicked || completeLoading}
           onClick={handleComplete}
           style={{
-            padding: `${spacing.md} ${spacing.xl}`,
+            padding: `${spacing.sm} ${spacing.xl}`,
             backgroundColor: allPicked ? colors.primary : colors.border,
             color: allPicked ? colors.cream : colors.textLight,
-            border: `3px solid ${allPicked ? colors.primary : colors.border}`,
-            fontSize: typography.fontSize.lg,
+            border: `2px solid ${allPicked ? colors.primary : colors.border}`,
+            fontSize: typography.fontSize.sm,
             fontWeight: typography.fontWeight.bold,
             textTransform: 'uppercase',
-            borderRadius: radii.md,
+            borderRadius: radii.sm,
             cursor: allPicked ? 'pointer' : 'not-allowed',
+            minWidth: 200,
           }}
         >
-          {completeLoading ? 'Completing…' : 'Complete Picking →'}
+          {completeLoading ? 'Completing…' : 'Complete picking →'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SummaryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: typography.fontSize.xs,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: colors.textLight,
+          marginBottom: spacing.xs,
+          fontWeight: typography.fontWeight.semibold,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: typography.fontSize.sm,
+          fontWeight: typography.fontWeight.semibold,
+          color: colors.text,
+        }}
+      >
+        {value}
       </div>
     </div>
   );
