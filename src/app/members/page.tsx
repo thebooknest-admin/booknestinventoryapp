@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { getTierDisplayName } from '@/lib/types';
 import { getMembersList, type MembersListRow } from '@/lib/queries';
-import { updateMember } from '@/app/actions/members';
+import { updateMember, createMember } from '@/app/actions/members';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +19,19 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
   const [editing, setEditing] = useState<MembersListRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [isAdding, setIsAdding] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: '',
+    email: '',
+    subscription_status: 'waitlist' as string | null,
+    tier: '' as string | null,
+    age_group: '' as string | null,
+    is_founding_flock: false,
+    is_vip: false,
+  });
+  const [addError, setAddError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
   const totals = {
     all: members.length,
@@ -66,6 +79,61 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
     }
   };
 
+  const handleOpenAdd = () => {
+    setAddForm({
+      name: '',
+      email: '',
+      subscription_status: 'waitlist',
+      tier: '',
+      age_group: '',
+      is_founding_flock: false,
+      is_vip: false,
+    });
+    setAddError(null);
+    setIsAdding(true);
+  };
+
+  const handleCloseAdd = () => {
+    if (isCreating) return;
+    setIsAdding(false);
+    setAddError(null);
+  };
+
+  const handleCreate = async () => {
+    if (!addForm.name.trim() || !addForm.email.trim()) {
+      setAddError('Name and email are required');
+      return;
+    }
+
+    setIsCreating(true);
+    setAddError(null);
+
+    try {
+      const result = await createMember({
+        name: addForm.name.trim(),
+        email: addForm.email.trim(),
+        subscription_status: addForm.subscription_status,
+        tier: addForm.tier || null,
+        age_group: addForm.age_group || null,
+        is_founding_flock: addForm.is_founding_flock,
+        is_vip: addForm.is_vip,
+      });
+
+      if (!result.success || !result.member) {
+        setAddError(result.error || 'Failed to create member');
+        setIsCreating(false);
+        return;
+      }
+
+      setMembers((prev) => [result.member as MembersListRow, ...prev]);
+      setIsCreating(false);
+      setIsAdding(false);
+    } catch (e) {
+      setAddError('Unexpected error while creating member');
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -79,7 +147,7 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'baseline',
+          alignItems: 'center',
           marginBottom: spacing.xl,
         }}
       >
@@ -107,16 +175,42 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
           </p>
         </div>
 
-        <Link
-          href="/dashboard"
+        <div
           style={{
-            fontSize: typography.fontSize.sm,
-            color: colors.textLight,
-            textDecoration: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: spacing.md,
           }}
         >
-          ← Back to dashboard
-        </Link>
+          <button
+            type="button"
+            onClick={handleOpenAdd}
+            style={{
+              padding: `${spacing.sm} ${spacing.md}`,
+              borderRadius: radii.sm,
+              border: `1px solid ${colors.primary}`,
+              backgroundColor: colors.primary,
+              color: colors.cream,
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+            }}
+          >
+            Add member
+          </button>
+
+          <Link
+            href="/dashboard"
+            style={{
+              fontSize: typography.fontSize.sm,
+              color: colors.textLight,
+              textDecoration: 'none',
+            }}
+          >
+            ← Back to dashboard
+          </Link>
+        </div>
       </header>
 
       {/* Summary pills */}
@@ -498,6 +592,346 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
                 }}
               >
                 {isSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Add Member Modal */}
+      {isAdding && (
+        <>
+          <div
+            onClick={handleCloseAdd}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 1000,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: colors.surface,
+              borderRadius: radii.lg,
+              border: `2px solid ${colors.primary}`,
+              padding: spacing.xl,
+              maxWidth: '480px',
+              width: '90%',
+              zIndex: 1001,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: spacing.md,
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    marginBottom: spacing.xs,
+                    fontSize: typography.fontSize['xl'],
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.primary,
+                  }}
+                >
+                  Add Member
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: typography.fontSize.xs,
+                    color: colors.textLight,
+                  }}
+                >
+                  Create a waitlist or active member record.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseAdd}
+                disabled={isCreating}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: isCreating ? 'not-allowed' : 'pointer',
+                  fontSize: typography.fontSize.lg,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {addError && (
+              <div
+                style={{
+                  marginBottom: spacing.sm,
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  backgroundColor: colors.warning,
+                  color: colors.deepCocoa,
+                  fontSize: typography.fontSize.xs,
+                }}
+              >
+                {addError}
+              </div>
+            )}
+
+            {/* Name */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Name
+              </label>
+              <input
+                type="text"
+                value={addForm.name}
+                onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.sm,
+                  backgroundColor: colors.cream,
+                }}
+              />
+            </div>
+
+            {/* Email */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Email
+              </label>
+              <input
+                type="email"
+                value={addForm.email}
+                onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.sm,
+                  backgroundColor: colors.cream,
+                }}
+              />
+            </div>
+
+            {/* Status */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Status
+              </label>
+              <select
+                value={addForm.subscription_status || ''}
+                onChange={(e) =>
+                  setAddForm({ ...addForm, subscription_status: e.target.value || null })
+                }
+                style={{
+                  width: '100%',
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.sm,
+                  backgroundColor: colors.cream,
+                }}
+              >
+                <option value="waitlist">Waitlist</option>
+                <option value="active">Active</option>
+              </select>
+            </div>
+
+            {/* Tier */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Tier (optional)
+              </label>
+              <select
+                value={addForm.tier || ''}
+                onChange={(e) =>
+                  setAddForm({ ...addForm, tier: e.target.value || '' })
+                }
+                style={{
+                  width: '100%',
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.sm,
+                  backgroundColor: colors.cream,
+                }}
+              >
+                <option value="">(none yet)</option>
+                <option value="little-nest">Little Nest (4 books)</option>
+                <option value="cozy-nest">Cozy Nest (6 books)</option>
+                <option value="story-nest">Story Nest (8 books)</option>
+              </select>
+            </div>
+
+            {/* Age group */}
+            <div style={{ marginBottom: spacing.md }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Age group (optional)
+              </label>
+              <select
+                value={addForm.age_group || ''}
+                onChange={(e) =>
+                  setAddForm({ ...addForm, age_group: e.target.value || '' })
+                }
+                style={{
+                  width: '100%',
+                  padding: spacing.sm,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: typography.fontSize.sm,
+                  backgroundColor: colors.cream,
+                }}
+              >
+                <option value="">(none yet)</option>
+                <option value="Hatchlings">Hatchlings</option>
+                <option value="Fledglings">Fledglings</option>
+                <option value="Soarers">Soarers</option>
+                <option value="Sky Readers">Sky Readers</option>
+              </select>
+            </div>
+
+            {/* Flags */}
+            <div style={{ marginBottom: spacing.lg }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                Flags
+              </label>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: spacing.xs,
+                  fontSize: typography.fontSize.sm,
+                }}
+              >
+                <label style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
+                  <input
+                    type="checkbox"
+                    checked={addForm.is_founding_flock}
+                    onChange={(e) =>
+                      setAddForm({ ...addForm, is_founding_flock: e.target.checked })
+                    }
+                  />
+                  Founding Flock
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
+                  <input
+                    type="checkbox"
+                    checked={addForm.is_vip}
+                    onChange={(e) =>
+                      setAddForm({ ...addForm, is_vip: e.target.checked })
+                    }
+                  />
+                  VIP
+                </label>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: spacing.sm,
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleCloseAdd}
+                disabled={isCreating}
+                style={{
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.surface,
+                  fontSize: typography.fontSize.sm,
+                  cursor: isCreating ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={isCreating}
+                style={{
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.primary}`,
+                  backgroundColor: isCreating ? colors.border : colors.primary,
+                  color: colors.cream,
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.semibold,
+                  textTransform: 'uppercase',
+                  cursor: isCreating ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isCreating ? 'Creating…' : 'Create member'}
               </button>
             </div>
           </div>
