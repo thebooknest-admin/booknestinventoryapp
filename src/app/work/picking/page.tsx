@@ -50,6 +50,11 @@ export default async function PickingQueue() {
   const bundles = await getPickingQueue();
 
   const isEmpty = bundles.length === 0;
+  const totalBundles = bundles.length;
+  const totalBooks = bundles.reduce(
+    (sum, b) => sum + (b.books_to_pick ?? getTierBookCount(b.tier)),
+    0
+  );
 
   return (
     <div
@@ -62,7 +67,7 @@ export default async function PickingQueue() {
     >
       <header
         style={{
-          marginBottom: spacing.xl,
+          marginBottom: spacing.lg,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
@@ -107,6 +112,21 @@ export default async function PickingQueue() {
           </p>
         </div>
       </header>
+
+      {/* Queue summary */}
+      {!isEmpty && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: spacing.sm,
+            marginBottom: spacing.lg,
+          }}
+        >
+          <SummaryPill label="Bundles" value={totalBundles} />
+          <SummaryPill label="Total books" value={totalBooks} />
+        </div>
+      )}
 
       {isEmpty ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
@@ -369,7 +389,7 @@ export default async function PickingQueue() {
                   style={{
                     padding: spacing.md,
                     textAlign: 'left',
-                    fontSize: typography.fontSize.sm,
+                    fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -381,7 +401,7 @@ export default async function PickingQueue() {
                   style={{
                     padding: spacing.md,
                     textAlign: 'left',
-                    fontSize: typography.fontSize.sm,
+                    fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -393,7 +413,7 @@ export default async function PickingQueue() {
                   style={{
                     padding: spacing.md,
                     textAlign: 'left',
-                    fontSize: typography.fontSize.sm,
+                    fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -405,7 +425,7 @@ export default async function PickingQueue() {
                   style={{
                     padding: spacing.md,
                     textAlign: 'left',
-                    fontSize: typography.fontSize.sm,
+                    fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -417,7 +437,7 @@ export default async function PickingQueue() {
                   style={{
                     padding: spacing.md,
                     textAlign: 'left',
-                    fontSize: typography.fontSize.sm,
+                    fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -429,7 +449,7 @@ export default async function PickingQueue() {
                   style={{
                     padding: spacing.md,
                     textAlign: 'right',
-                    fontSize: typography.fontSize.sm,
+                    fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -444,14 +464,14 @@ export default async function PickingQueue() {
                 <tr
                   key={bundle.bundle_id}
                   style={{
-                    borderBottom: `2px solid ${colors.border}`,
+                    borderBottom: `1px solid ${colors.border}`,
                     backgroundColor: index % 2 === 0 ? colors.surface : colors.cream,
                   }}
                 >
                   <td
                     style={{
                       padding: spacing.md,
-                      fontSize: typography.fontSize.base,
+                      fontSize: typography.fontSize.sm,
                       color: colors.text,
                     }}
                   >
@@ -460,7 +480,7 @@ export default async function PickingQueue() {
                   <td
                     style={{
                       padding: spacing.md,
-                      fontSize: typography.fontSize.base,
+                      fontSize: typography.fontSize.sm,
                       color: colors.text,
                     }}
                   >
@@ -490,7 +510,7 @@ export default async function PickingQueue() {
                   <td
                     style={{
                       padding: spacing.md,
-                      fontSize: typography.fontSize.base,
+                      fontSize: typography.fontSize.sm,
                       color: colors.text,
                     }}
                   >
@@ -499,7 +519,7 @@ export default async function PickingQueue() {
                   <td
                     style={{
                       padding: spacing.md,
-                      fontSize: typography.fontSize.base,
+                      fontSize: typography.fontSize.sm,
                       color: colors.text,
                     }}
                   >
@@ -525,6 +545,42 @@ export default async function PickingQueue() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function SummaryPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div
+      style={{
+        padding: `${spacing.xs} ${spacing.md}`,
+        borderRadius: radii.full,
+        border: `1px solid ${colors.border}`,
+        backgroundColor: colors.surface,
+        fontSize: typography.fontSize.xs,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: spacing.xs,
+      }}
+    >
+      <span
+        style={{
+          fontWeight: typography.fontWeight.semibold,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: colors.textLight,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontWeight: typography.fontWeight.bold,
+          color: colors.text,
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
