@@ -1,8 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles, RotateCcw, Copy, Check, Info } from 'lucide-react';
-import { colors, typography, spacing, radii } from '@/styles/tokens';
+import { Sparkles, RotateCcw, Copy, Check, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 interface BookDetails {
   isbn: string;
@@ -40,6 +44,10 @@ interface SuggestTagsAndBinResponse {
   }>;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
 const AGE_GROUP_OPTIONS = [
   { value: 'Hatchlings', label: 'Hatchlings (0-2)' },
   { value: 'Fledglings', label: 'Fledglings (3-5)' },
@@ -54,7 +62,71 @@ const AGE_TO_BIN_PREFIX: Record<string, string> = {
   'Sky Readers': 'SKY',
 };
 
+/* ------------------------------------------------------------------ */
+/*  Shared styles                                                      */
+/* ------------------------------------------------------------------ */
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: typography.fontSize.xs,
+  fontWeight: typography.fontWeight.bold,
+  color: colors.textLight,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  marginBottom: spacing.xs,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: spacing.sm,
+  borderRadius: radii.sm,
+  border: `2px solid ${colors.border}`,
+  fontSize: typography.fontSize.base,
+  fontFamily: typography.fontFamily.body,
+  color: colors.text,
+  backgroundColor: colors.surface,
+  transition: 'border-color 0.15s ease',
+};
+
+const cardStyle: React.CSSProperties = {
+  padding: spacing.lg,
+  borderRadius: radii.lg,
+  backgroundColor: colors.surface,
+  border: `1px solid ${colors.border}`,
+  boxShadow: shadows.sm,
+};
+
+const pillBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: `${spacing.xs} ${spacing.sm}`,
+  borderRadius: radii.full,
+  border: `1px solid ${colors.border}`,
+  backgroundColor: colors.surface,
+  fontSize: typography.fontSize.xs,
+  fontWeight: typography.fontWeight.medium,
+  color: colors.textLight,
+  cursor: 'pointer',
+  transition: 'all 0.15s ease',
+};
+
+const tagStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: `2px ${spacing.sm}`,
+  borderRadius: radii.full,
+  border: `1px solid ${colors.border}`,
+  fontSize: typography.fontSize.xs,
+  color: colors.textSecondary,
+  backgroundColor: colors.cream,
+};
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
 export default function ReceivePage() {
+  // Core form state
   const [isbnInput, setIsbnInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [book, setBook] = useState<BookDetails | null>(null);
@@ -67,21 +139,20 @@ export default function ReceivePage() {
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
 
-  // Helper for summary-based tag/bin suggestions
+  // AI suggestion helper
   const [summaryText, setSummaryText] = useState('');
   const [suggestAgeGroup, setSuggestAgeGroup] = useState('');
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [suggestedBins, setSuggestedBins] = useState<SuggestTagsAndBinResponse['suggested_bins']>([]);
+  const [helperOpen, setHelperOpen] = useState(false);
 
-  // Clipboard feedback
+  // UI micro-state
   const [copied, setCopied] = useState(false);
-
-  // Ref for auto-focusing ISBN input
   const isbnRef = useRef<HTMLInputElement>(null);
 
-  // Filter bins by selected age group
+  // Derived: filter bins by selected age group
   const filteredBins = ageGroup
     ? bins.filter((b) => {
         const prefix = AGE_TO_BIN_PREFIX[ageGroup];
@@ -89,11 +160,18 @@ export default function ReceivePage() {
       })
     : bins;
 
+  // Derived: does bin help have anything to show?
+  const hasBinHelpContent =
+    binHelp && (binHelp.description || (binHelp.tags && binHelp.tags.length > 0));
+
+  /* ---- Effects ---- */
+
   useEffect(() => {
     loadBins();
+    isbnRef.current?.focus();
   }, []);
 
-  // Clear bin selection when age group changes and current bin doesn't match
+  // Clear bin when age group changes and current bin doesn't match
   useEffect(() => {
     if (ageGroup && bin) {
       const prefix = AGE_TO_BIN_PREFIX[ageGroup];
@@ -104,19 +182,40 @@ export default function ReceivePage() {
     }
   }, [ageGroup, bin]);
 
+  /* ---- Data fetchers ---- */
+
   async function loadBins() {
     try {
       const res = await fetch('/api/bins', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
-      setBins((data.bins || []).map((b: { bin_code: string; display_name?: string | null }) => ({
-        bin_code: b.bin_code,
-        display_name: b.display_name ?? null,
-      })));
+      setBins(
+        (data.bins || []).map((b: { bin_code: string; display_name?: string | null }) => ({
+          bin_code: b.bin_code,
+          display_name: b.display_name ?? null,
+        })),
+      );
     } catch (err) {
       console.error('Failed to load bins:', err);
     }
   }
+
+  async function loadBinHelp(binCode: string) {
+    if (!binCode) {
+      setBinHelp(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/bin-help?binCode=${encodeURIComponent(binCode)}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as BinHelpResponse;
+      setBinHelp(data);
+    } catch (err) {
+      console.error('Failed to load bin help:', err);
+    }
+  }
+
+  /* ---- Handlers ---- */
 
   async function handleLookupIsbn() {
     const trimmed = isbnInput.trim();
@@ -130,17 +229,12 @@ export default function ReceivePage() {
 
     try {
       const res = await fetch(`/api/book?isbn=${encodeURIComponent(trimmed)}`);
-      if (!res.ok) {
-        throw new Error('Lookup failed');
-      }
-      const data = await res.json();
-      setBook({
-        isbn: trimmed,
-        title: data.title || '',
-        author: data.author || '',
-      });
+      if (!res.ok) throw new Error('Lookup failed');
 
-      // Call age/theme suggestion endpoint
+      const data = await res.json();
+      setBook({ isbn: trimmed, title: data.title || '', author: data.author || '' });
+
+      // Fire-and-forget age/theme suggestion
       try {
         const suggestRes = await fetch('/api/suggest-age-theme', {
           method: 'POST',
@@ -148,8 +242,7 @@ export default function ReceivePage() {
           body: JSON.stringify({ isbn: trimmed, title: data.title, author: data.author }),
         });
         if (suggestRes.ok) {
-          const suggest = (await suggestRes.json()) as SuggestAgeThemeResponse;
-          setAgeSuggestion(suggest);
+          setAgeSuggestion((await suggestRes.json()) as SuggestAgeThemeResponse);
         }
       } catch (err) {
         console.error('Error calling suggest-age-theme:', err);
@@ -189,9 +282,9 @@ export default function ReceivePage() {
         throw new Error(body?.error || 'Failed to receive book');
       }
 
-      setReceiveMessage(`Book received into inventory — ${book.title} → ${bin}`);
+      setReceiveMessage(`Book received — ${book.title} → ${bin}`);
 
-      // Auto-reset after short delay so you can scan the next book
+      // Auto-reset so you can scan the next book
       setTimeout(() => {
         handleNewScan();
         isbnRef.current?.focus();
@@ -201,21 +294,6 @@ export default function ReceivePage() {
       setReceiveError(err instanceof Error ? err.message : 'Failed to receive book.');
     } finally {
       setIsReceiving(false);
-    }
-  }
-
-  async function loadBinHelp(binCode: string) {
-    if (!binCode) {
-      setBinHelp(null);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/bin-help?binCode=${encodeURIComponent(binCode)}`);
-      if (!res.ok) return;
-      const data = (await res.json()) as BinHelpResponse;
-      setBinHelp(data);
-    } catch (err) {
-      console.error('Failed to load bin help:', err);
     }
   }
 
@@ -234,6 +312,7 @@ export default function ReceivePage() {
     setSuggestedBins([]);
     setSuggestionError(null);
     setCopied(false);
+    setHelperOpen(false);
   }, []);
 
   async function handleSuggestTagsAndBin() {
@@ -266,13 +345,10 @@ export default function ReceivePage() {
       setSuggestedTags(data.suggested_tags || []);
       setSuggestedBins(data.suggested_bins || []);
 
-      // If we got a top bin and no bin is selected yet, pre-fill it
-      if (!bin && data.suggested_bins && data.suggested_bins.length > 0) {
+      if (!bin && data.suggested_bins?.length) {
         setBin(data.suggested_bins[0].bin_code);
         void loadBinHelp(data.suggested_bins[0].bin_code);
       }
-
-      // If we have no age group yet but the suggestion returned one, pre-fill it
       if (!ageGroup && data.age_group) {
         setAgeGroup(data.age_group);
       }
@@ -286,30 +362,30 @@ export default function ReceivePage() {
 
   function handleCopyIsbn() {
     if (!book) return;
-    navigator.clipboard.writeText(book.isbn).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {
-      // Clipboard not available — fail silently
-    });
+    navigator.clipboard
+      .writeText(book.isbn)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
   }
+
+  /* ---- Render ---- */
 
   return (
     <div
       style={{
         minHeight: '100vh',
-        padding: spacing.xl,
-        maxWidth: '900px',
+        padding: `${spacing.xl} ${spacing.lg}`,
+        maxWidth: '860px',
         margin: '0 auto',
+        fontFamily: typography.fontFamily.body,
+        color: colors.text,
       }}
     >
-      <header
-        style={{
-          marginBottom: spacing.xl,
-          paddingBottom: spacing.lg,
-          borderBottom: `3px solid ${colors.primary}`,
-        }}
-      >
+      {/* ===== Header ===== */}
+      <header style={{ marginBottom: spacing['2xl'] }}>
         <h1
           style={{
             fontFamily: typography.fontFamily.heading,
@@ -326,42 +402,19 @@ export default function ReceivePage() {
           style={{
             margin: 0,
             fontSize: typography.fontSize.sm,
-            color: colors.textLight,
+            color: colors.textSecondary,
+            lineHeight: typography.lineHeight.normal,
           }}
         >
-          Scan or enter ISBN, confirm details, and assign an age group & bin.
+          Scan or enter ISBN, confirm details, and assign an age group &amp; bin.
         </p>
       </header>
 
-      {/* Step 1: Scan ISBN */}
-      <section
-        style={{
-          marginBottom: spacing.xl,
-          padding: spacing.lg,
-          borderRadius: radii.md,
-          backgroundColor: colors.surface,
-          border: `2px solid ${colors.border}`,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            marginTop: 0,
-            marginBottom: spacing.md,
-          }}
-        >
-          Step 1 — Scan or enter ISBN
-        </h2>
+      {/* ===== Step 1: ISBN ===== */}
+      <section style={{ ...cardStyle, marginBottom: spacing.lg }}>
+        <StepHeader number={1} title="Scan or enter ISBN" />
 
-        <div
-          style={{
-            display: 'flex',
-            gap: spacing.sm,
-            alignItems: 'center',
-            marginBottom: spacing.sm,
-          }}
-        >
+        <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
           <input
             id="isbn-input"
             ref={isbnRef}
@@ -375,14 +428,7 @@ export default function ReceivePage() {
               }
             }}
             placeholder="Scan ISBN barcode or type it here"
-            style={{
-              flex: 1,
-              padding: spacing.sm,
-              borderRadius: radii.sm,
-              border: `2px solid ${colors.border}`,
-              fontSize: typography.fontSize.base,
-              fontFamily: 'monospace',
-            }}
+            style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }}
           />
           <button
             type="button"
@@ -391,13 +437,15 @@ export default function ReceivePage() {
             style={{
               padding: `${spacing.sm} ${spacing.lg}`,
               backgroundColor: isbnInput.trim() ? colors.primary : colors.border,
-              color: isbnInput.trim() ? colors.cream : colors.textLight,
-              border: `2px solid ${isbnInput.trim() ? colors.primary : colors.border}`,
+              color: isbnInput.trim() ? colors.cream : colors.textMuted,
+              border: 'none',
               borderRadius: radii.sm,
               fontSize: typography.fontSize.sm,
               fontWeight: typography.fontWeight.bold,
               textTransform: 'uppercase',
               cursor: isbnInput.trim() && !loading ? 'pointer' : 'not-allowed',
+              transition: 'background-color 0.15s ease',
+              whiteSpace: 'nowrap',
             }}
           >
             {loading ? 'Looking up…' : 'Lookup'}
@@ -405,44 +453,16 @@ export default function ReceivePage() {
         </div>
 
         {book && (
-          <div
-            style={{
-              marginTop: spacing.sm,
-              fontSize: typography.fontSize.xs,
-              color: colors.textLight,
-            }}
-          >
-            <button
-              type="button"
-              onClick={handleCopyIsbn}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: `${spacing.xs} ${spacing.sm}`,
-                borderRadius: radii.full,
-                border: `1px solid ${colors.border}`,
-                backgroundColor: colors.surface,
-                fontSize: typography.fontSize.xs,
-                cursor: 'pointer',
-              }}
-            >
+          <div style={{ marginTop: spacing.sm }}>
+            <button type="button" onClick={handleCopyIsbn} style={pillBtnStyle}>
               {copied ? <Check size={14} /> : <Copy size={14} />} ISBN {book.isbn}
             </button>
           </div>
         )}
       </section>
 
-      {/* Step 2: Book details */}
-      <section
-        style={{
-          marginBottom: spacing.xl,
-          padding: spacing.lg,
-          borderRadius: radii.md,
-          backgroundColor: colors.surface,
-          border: `2px solid ${colors.border}`,
-        }}
-      >
+      {/* ===== Step 2: Book details ===== */}
+      <section style={{ ...cardStyle, marginBottom: spacing.lg }}>
         <div
           style={{
             display: 'flex',
@@ -451,185 +471,114 @@ export default function ReceivePage() {
             marginBottom: spacing.md,
           }}
         >
-          <h2
-            style={{
-              fontSize: typography.fontSize.lg,
-              fontWeight: typography.fontWeight.bold,
-              margin: 0,
-            }}
-          >
-            Step 2 — Confirm book details
-          </h2>
+          <StepHeader number={2} title="Confirm book details" inline />
           <button
             type="button"
             onClick={() => {
               handleNewScan();
               isbnRef.current?.focus();
             }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: `${spacing.xs} ${spacing.sm}`,
-              borderRadius: radii.full,
-              border: `1px solid ${colors.border}`,
-              backgroundColor: colors.surface,
-              fontSize: typography.fontSize.xs,
-              cursor: 'pointer',
-            }}
+            style={pillBtnStyle}
           >
             <RotateCcw size={14} /> New scan
           </button>
         </div>
 
-        <div style={{ marginBottom: spacing.md }}>
-          <label
-            htmlFor="book-title"
-            style={{
-              display: 'block',
-              fontSize: typography.fontSize.xs,
-              fontWeight: typography.fontWeight.bold,
-              color: colors.textLight,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: spacing.xs,
-            }}
-          >
-            Title
-          </label>
-          <input
-            id="book-title"
-            type="text"
-            value={book?.title || ''}
-            onChange={(e) =>
-              setBook((prev) =>
-                prev ? { ...prev, title: e.target.value } : { isbn: isbnInput, title: e.target.value, author: '' }
-              )
-            }
-            placeholder="Book title"
-            style={{
-              width: '100%',
-              padding: spacing.sm,
-              borderRadius: radii.sm,
-              border: `2px solid ${colors.border}`,
-              fontSize: typography.fontSize.base,
-            }}
-          />
-        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: spacing.md,
+          }}
+        >
+          <div>
+            <label htmlFor="book-title" style={labelStyle}>
+              Title
+            </label>
+            <input
+              id="book-title"
+              type="text"
+              value={book?.title || ''}
+              onChange={(e) =>
+                setBook((prev) =>
+                  prev
+                    ? { ...prev, title: e.target.value }
+                    : { isbn: isbnInput, title: e.target.value, author: '' },
+                )
+              }
+              placeholder="Book title"
+              style={inputStyle}
+            />
+          </div>
 
-        <div style={{ marginBottom: spacing.md }}>
-          <label
-            htmlFor="book-author"
-            style={{
-              display: 'block',
-              fontSize: typography.fontSize.xs,
-              fontWeight: typography.fontWeight.bold,
-              color: colors.textLight,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: spacing.xs,
-            }}
-          >
-            Author
-          </label>
-          <input
-            id="book-author"
-            type="text"
-            value={book?.author || ''}
-            onChange={(e) =>
-              setBook((prev) =>
-                prev ? { ...prev, author: e.target.value } : { isbn: isbnInput, title: '', author: e.target.value }
-              )
-            }
-            placeholder="Author name"
-            style={{
-              width: '100%',
-              padding: spacing.sm,
-              borderRadius: radii.sm,
-              border: `2px solid ${colors.border}`,
-              fontSize: typography.fontSize.base,
-            }}
-          />
+          <div>
+            <label htmlFor="book-author" style={labelStyle}>
+              Author
+            </label>
+            <input
+              id="book-author"
+              type="text"
+              value={book?.author || ''}
+              onChange={(e) =>
+                setBook((prev) =>
+                  prev
+                    ? { ...prev, author: e.target.value }
+                    : { isbn: isbnInput, title: '', author: e.target.value },
+                )
+              }
+              placeholder="Author name"
+              style={inputStyle}
+            />
+          </div>
         </div>
 
         {ageSuggestion && (
           <div
             style={{
-              marginTop: spacing.sm,
-              padding: spacing.sm,
+              marginTop: spacing.md,
+              padding: `${spacing.sm} ${spacing.md}`,
               borderRadius: radii.sm,
               backgroundColor: colors.cream,
               fontSize: typography.fontSize.xs,
-              color: colors.textLight,
+              color: colors.textSecondary,
+              display: 'flex',
+              alignItems: 'center',
+              gap: spacing.sm,
             }}
           >
-            <span style={{ fontWeight: typography.fontWeight.semibold }}>Suggested age group:</span>{' '}
-            {ageSuggestion.age_group || '—'}{' '}
-            {ageSuggestion.theme_tags && ageSuggestion.theme_tags.length > 0 && (
-              <>
-                · Tags: {ageSuggestion.theme_tags.join(', ')}
-              </>
-            )}
+            <Sparkles size={14} style={{ color: colors.secondary, flexShrink: 0 }} />
+            <span>
+              <strong>Suggested age group:</strong> {ageSuggestion.age_group || '—'}
+              {ageSuggestion.theme_tags && ageSuggestion.theme_tags.length > 0 && (
+                <> · Tags: {ageSuggestion.theme_tags.join(', ')}</>
+              )}
+            </span>
           </div>
         )}
       </section>
 
-      {/* Step 3: Age group & bin */}
-      <section
-        style={{
-          marginBottom: spacing.xl,
-          padding: spacing.lg,
-          borderRadius: radii.md,
-          backgroundColor: colors.surface,
-          border: `2px solid ${colors.border}`,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: typography.fontSize.lg,
-            fontWeight: typography.fontWeight.bold,
-            marginTop: 0,
-            marginBottom: spacing.md,
-          }}
-        >
-          Step 3 — Assign age group & bin
-        </h2>
+      {/* ===== Step 3: Age group & bin ===== */}
+      <section style={{ ...cardStyle, marginBottom: spacing.lg }}>
+        <StepHeader number={3} title="Assign age group & bin" />
 
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: spacing.lg,
-            marginBottom: spacing.lg,
+            gap: spacing.md,
+            marginBottom: spacing.md,
           }}
         >
           {/* Age group */}
           <div>
-            <label
-              htmlFor="age-group"
-              style={{
-                display: 'block',
-                fontSize: typography.fontSize.xs,
-                fontWeight: typography.fontWeight.bold,
-                color: colors.textLight,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: spacing.xs,
-              }}
-            >
+            <label htmlFor="age-group" style={labelStyle}>
               Age group
             </label>
             <select
               id="age-group"
               value={ageGroup}
               onChange={(e) => setAgeGroup(e.target.value)}
-              style={{
-                width: '100%',
-                padding: spacing.sm,
-                borderRadius: radii.sm,
-                border: `2px solid ${colors.border}`,
-                fontSize: typography.fontSize.base,
-              }}
+              style={inputStyle}
             >
               <option value="">Select an age band…</option>
               {AGE_GROUP_OPTIONS.map((opt) => (
@@ -642,18 +591,7 @@ export default function ReceivePage() {
 
           {/* Bin */}
           <div>
-            <label
-              htmlFor="bin-select"
-              style={{
-                display: 'block',
-                fontSize: typography.fontSize.xs,
-                fontWeight: typography.fontWeight.bold,
-                color: colors.textLight,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: spacing.xs,
-              }}
-            >
+            <label htmlFor="bin-select" style={labelStyle}>
               Bin location
               {ageGroup && (
                 <span
@@ -661,19 +599,14 @@ export default function ReceivePage() {
                     fontWeight: typography.fontWeight.normal,
                     textTransform: 'none',
                     marginLeft: spacing.xs,
+                    color: colors.textMuted,
                   }}
                 >
-                  — showing {AGE_TO_BIN_PREFIX[ageGroup] || ''} bins
+                  — {AGE_TO_BIN_PREFIX[ageGroup] || ''} bins
                 </span>
               )}
             </label>
-            <div
-              style={{
-                display: 'flex',
-                gap: spacing.sm,
-                alignItems: 'center',
-              }}
-            >
+            <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
               <select
                 id="bin-select"
                 value={bin}
@@ -681,22 +614,13 @@ export default function ReceivePage() {
                   setBin(e.target.value);
                   void loadBinHelp(e.target.value);
                 }}
-                style={{
-                  flex: 1,
-                  padding: spacing.sm,
-                  borderRadius: radii.sm,
-                  border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.base,
-                  fontFamily: 'monospace',
-                }}
+                style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }}
               >
                 <option value="">Select bin…</option>
                 {filteredBins.map((b) => (
                   <option key={b.bin_code} value={b.bin_code}>
                     {b.bin_code}
-                    {b.display_name && b.display_name !== b.bin_code
-                      ? ` — ${b.display_name}`
-                      : ''}
+                    {b.display_name && b.display_name !== b.bin_code ? ` — ${b.display_name}` : ''}
                   </option>
                 ))}
               </select>
@@ -704,15 +628,12 @@ export default function ReceivePage() {
                 type="button"
                 onClick={() => void loadBinHelp(bin)}
                 disabled={!bin}
+                aria-label="Bin info"
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: spacing.xs,
-                  borderRadius: radii.full,
-                  border: `1px solid ${colors.border}`,
-                  backgroundColor: colors.surface,
+                  ...pillBtnStyle,
+                  padding: spacing.sm,
                   cursor: bin ? 'pointer' : 'not-allowed',
+                  opacity: bin ? 1 : 0.4,
                 }}
               >
                 <Info size={16} />
@@ -721,10 +642,11 @@ export default function ReceivePage() {
           </div>
         </div>
 
-        {binHelp && (
+        {/* Bin help info card */}
+        {hasBinHelpContent && (
           <div
             style={{
-              marginBottom: spacing.lg,
+              marginBottom: spacing.md,
               padding: spacing.md,
               borderRadius: radii.sm,
               backgroundColor: colors.cream,
@@ -734,45 +656,22 @@ export default function ReceivePage() {
             <div
               style={{
                 fontWeight: typography.fontWeight.semibold,
-                marginBottom: spacing.xs,
+                marginBottom: binHelp!.description ? spacing.xs : 0,
+                color: colors.text,
               }}
             >
-              {binHelp.bin_code}
-              {binHelp.display_name
-                ? ` — ${binHelp.display_name}`
-                : ''}
+              {binHelp!.bin_code}
+              {binHelp!.display_name ? ` — ${binHelp!.display_name}` : ''}
             </div>
-            {binHelp.description && (
-              <p
-                style={{
-                  margin: 0,
-                  marginBottom: spacing.xs,
-                  color: colors.text,
-                }}
-              >
-                {binHelp.description}
+            {binHelp!.description && (
+              <p style={{ margin: 0, marginBottom: spacing.xs, color: colors.textSecondary }}>
+                {binHelp!.description}
               </p>
             )}
-            {binHelp.tags && binHelp.tags.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: spacing.xs,
-                  marginTop: spacing.xs,
-                }}
-              >
-                {binHelp.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    style={{
-                      padding: `${spacing.xs} ${spacing.sm}`,
-                      borderRadius: radii.full,
-                      border: `1px solid ${colors.border}`,
-                      fontSize: typography.fontSize.xs,
-                      color: colors.textLight,
-                    }}
-                  >
+            {binHelp!.tags && binHelp!.tags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
+                {binHelp!.tags.map((tag) => (
+                  <span key={tag} style={tagStyle}>
                     {tag}
                   </span>
                 ))}
@@ -781,262 +680,255 @@ export default function ReceivePage() {
           </div>
         )}
 
-        {/* Summary-based helper */}
+        {/* ---- AI helper (collapsible) ---- */}
         <div
           style={{
-            marginTop: spacing.lg,
-            paddingTop: spacing.lg,
-            borderTop: `1px dashed ${colors.border}`,
+            borderTop: `1px solid ${colors.border}`,
+            paddingTop: spacing.md,
           }}
         >
-          <div
+          <button
+            type="button"
+            onClick={() => setHelperOpen((o) => !o)}
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
-              gap: spacing.sm,
               alignItems: 'center',
-              marginBottom: spacing.sm,
+              gap: spacing.sm,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: typography.fontSize.sm,
+              fontWeight: typography.fontWeight.semibold,
+              color: colors.primary,
             }}
           >
-            <div
-              style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.semibold,
-                color: colors.text,
-              }}
-            >
-              Need help choosing tags & bin?
-            </div>
-            <button
-              type="button"
-              onClick={handleSuggestTagsAndBin}
-              disabled={suggestionLoading}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: `${spacing.xs} ${spacing.sm}`,
-                borderRadius: radii.full,
-                border: `1px solid ${colors.primary}`,
-                backgroundColor: colors.surface,
-                color: colors.primary,
-                fontSize: typography.fontSize.xs,
-                fontWeight: typography.fontWeight.semibold,
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <Sparkles size={14} />
-              {suggestionLoading ? 'Suggesting…' : 'Suggest tags & bin'}
-            </button>
-          </div>
+            <Sparkles size={16} />
+            Need help choosing tags &amp; bin?
+            {helperOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
-              gap: spacing.md,
-              alignItems: 'flex-start',
-            }}
-          >
-            <div>
-              <label
-                htmlFor="summary-text"
+          {helperOpen && (
+            <div style={{ marginTop: spacing.md }}>
+              {/* Summary textarea — full width */}
+              <div style={{ marginBottom: spacing.md }}>
+                <label htmlFor="summary-text" style={labelStyle}>
+                  Paste summary or notes
+                </label>
+                <textarea
+                  id="summary-text"
+                  value={summaryText}
+                  onChange={(e) => {
+                    setSummaryText(e.target.value);
+                    setSuggestionError(null);
+                  }}
+                  rows={3}
+                  placeholder="Paste the back-cover blurb or your notes about the story, themes, or tone."
+                  style={{
+                    ...inputStyle,
+                    fontSize: typography.fontSize.sm,
+                    resize: 'vertical',
+                    minHeight: '72px',
+                  }}
+                />
+              </div>
+
+              {/* Age override + Suggest button — inline row */}
+              <div
                 style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.xs,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.textLight,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  marginBottom: spacing.xs,
+                  display: 'flex',
+                  gap: spacing.md,
+                  alignItems: 'flex-end',
+                  marginBottom: spacing.md,
                 }}
               >
-                Paste summary or notes
-              </label>
-              <textarea
-                id="summary-text"
-                value={summaryText}
-                onChange={(e) => {
-                  setSummaryText(e.target.value);
-                  setSuggestionError(null);
-                }}
-                rows={4}
-                placeholder="Paste the back-cover blurb or your notes about the story, themes, or tone."
-                style={{
-                  width: '100%',
-                  padding: spacing.sm,
-                  borderRadius: radii.sm,
-                  border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.sm,
-                }}
-              />
-            </div>
+                <div style={{ flex: 1 }}>
+                  <label htmlFor="suggest-age-group" style={labelStyle}>
+                    Override age group (optional)
+                  </label>
+                  <select
+                    id="suggest-age-group"
+                    value={suggestAgeGroup}
+                    onChange={(e) => setSuggestAgeGroup(e.target.value)}
+                    style={{ ...inputStyle, fontSize: typography.fontSize.sm }}
+                  >
+                    <option value="">Use selected age group</option>
+                    {AGE_GROUP_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div>
-              <label
-                htmlFor="suggest-age-group"
-                style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.xs,
-                  fontWeight: typography.fontWeight.bold,
-                  color: colors.textLight,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  marginBottom: spacing.xs,
-                }}
-              >
-                Age group for suggestions (optional)
-              </label>
-              <select
-                id="suggest-age-group"
-                value={suggestAgeGroup}
-                onChange={(e) => setSuggestAgeGroup(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: spacing.sm,
-                  borderRadius: radii.sm,
-                  border: `2px solid ${colors.border}`,
-                  fontSize: typography.fontSize.sm,
-                }}
-              >
-                <option value="">Use selected age group (if any)</option>
-                {AGE_GROUP_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <button
+                  type="button"
+                  onClick={handleSuggestTagsAndBin}
+                  disabled={suggestionLoading}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: spacing.xs,
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    borderRadius: radii.sm,
+                    border: 'none',
+                    backgroundColor: colors.primary,
+                    color: colors.cream,
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.semibold,
+                    cursor: suggestionLoading ? 'wait' : 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                >
+                  <Sparkles size={14} />
+                  {suggestionLoading ? 'Suggesting…' : 'Suggest'}
+                </button>
+              </div>
 
+              {/* Error */}
               {suggestionError && (
                 <div
                   style={{
-                    marginTop: spacing.sm,
+                    marginBottom: spacing.md,
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    borderRadius: radii.sm,
+                    backgroundColor: '#FEF2F2',
                     fontSize: typography.fontSize.xs,
-                    color: colors.primary,
-                    fontWeight: typography.fontWeight.semibold,
+                    color: '#991B1B',
+                    fontWeight: typography.fontWeight.medium,
                   }}
                 >
                   {suggestionError}
                 </div>
               )}
 
-              {suggestedTags.length > 0 && (
+              {/* Results */}
+              {(suggestedTags.length > 0 || suggestedBins.length > 0) && (
                 <div
                   style={{
-                    marginTop: spacing.md,
-                    fontSize: typography.fontSize.xs,
-                    color: colors.textLight,
+                    padding: spacing.md,
+                    borderRadius: radii.sm,
+                    backgroundColor: colors.cream,
+                    display: 'grid',
+                    gridTemplateColumns: suggestedBins.length > 0 ? '1fr 1fr' : '1fr',
+                    gap: spacing.lg,
                   }}
                 >
-                  <div
-                    style={{
-                      marginBottom: spacing.xs,
-                      fontWeight: typography.fontWeight.semibold,
-                    }}
-                  >
-                    Suggested tags
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: spacing.xs,
-                    }}
-                  >
-                    {suggestedTags.map((tag) => (
-                      <span
-                        key={tag}
+                  {suggestedTags.length > 0 && (
+                    <div>
+                      <div
                         style={{
-                          padding: `${spacing.xs} ${spacing.sm}`,
-                          borderRadius: radii.full,
-                          border: `1px solid ${colors.border}`,
+                          fontSize: typography.fontSize.xs,
+                          fontWeight: typography.fontWeight.bold,
+                          color: colors.textLight,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          marginBottom: spacing.sm,
                         }}
                       >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+                        Suggested tags
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
+                        {suggestedTags.map((tag) => (
+                          <span key={tag} style={tagStyle}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-              {suggestedBins.length > 0 && (
-                <div
-                  style={{
-                    marginTop: spacing.md,
-                    fontSize: typography.fontSize.xs,
-                    color: colors.textLight,
-                  }}
-                >
-                  <div
-                    style={{
-                      marginBottom: spacing.xs,
-                      fontWeight: typography.fontWeight.semibold,
-                    }}
-                  >
-                    Suggested bins
-                  </div>
-                  <ul
-                    style={{
-                      margin: 0,
-                      paddingLeft: spacing.lg,
-                    }}
-                  >
-                    {suggestedBins.map((b) => (
-                      <li key={b.bin_code}>
-                        <span
-                          style={{
-                            fontWeight: typography.fontWeight.semibold,
-                            color: colors.text,
-                          }}
-                        >
-                          {b.bin_code}
-                        </span>
-                        {b.display_name && ` — ${b.display_name}`}
-                        {b.reason && (
-                          <span
+                  {suggestedBins.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: typography.fontSize.xs,
+                          fontWeight: typography.fontWeight.bold,
+                          color: colors.textLight,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          marginBottom: spacing.sm,
+                        }}
+                      >
+                        Suggested bins
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
+                        {suggestedBins.map((b) => (
+                          <div
+                            key={b.bin_code}
                             style={{
-                              color: colors.textLight,
-                              marginLeft: spacing.xs,
+                              fontSize: typography.fontSize.sm,
+                              lineHeight: typography.lineHeight.normal,
                             }}
                           >
-                            ({b.reason})
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                            <span
+                              style={{
+                                fontFamily: 'monospace',
+                                fontWeight: typography.fontWeight.semibold,
+                                color: colors.text,
+                              }}
+                            >
+                              {b.bin_code}
+                            </span>
+                            {b.display_name && (
+                              <span style={{ color: colors.textSecondary }}>
+                                {' '}
+                                — {b.display_name}
+                              </span>
+                            )}
+                            {b.reason && (
+                              <span
+                                style={{
+                                  display: 'block',
+                                  fontSize: typography.fontSize.xs,
+                                  color: colors.textMuted,
+                                  marginTop: '2px',
+                                }}
+                              >
+                                {b.reason}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          </div>
+          )}
         </div>
       </section>
 
-      {/* Receive action */}
+      {/* ===== Receive action ===== */}
       <section
         style={{
+          ...cardStyle,
           marginBottom: spacing.xl,
-          padding: spacing.lg,
-          borderRadius: radii.md,
-          backgroundColor: colors.surface,
-          border: `2px solid ${colors.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: spacing.md,
+          flexWrap: 'wrap',
         }}
       >
         <button
           type="button"
           onClick={() => void handleReceive()}
-          disabled={isReceiving}
+          disabled={isReceiving || !book || !ageGroup || !bin}
           style={{
-            padding: `${spacing.sm} ${spacing.xl}`,
-            backgroundColor: colors.primary,
-            color: colors.cream,
-            border: `2px solid ${colors.primary}`,
+            padding: `${spacing.sm} ${spacing['2xl']}`,
+            backgroundColor:
+              !book || !ageGroup || !bin ? colors.border : colors.primary,
+            color: !book || !ageGroup || !bin ? colors.textMuted : colors.cream,
+            border: 'none',
             borderRadius: radii.sm,
-            fontSize: typography.fontSize.sm,
+            fontSize: typography.fontSize.base,
             fontWeight: typography.fontWeight.bold,
             textTransform: 'uppercase',
-            cursor: 'pointer',
+            letterSpacing: '0.03em',
+            cursor: !book || !ageGroup || !bin || isReceiving ? 'not-allowed' : 'pointer',
+            transition: 'background-color 0.15s ease',
           }}
         >
           {isReceiving ? 'Receiving…' : 'Receive book →'}
@@ -1045,29 +937,93 @@ export default function ReceivePage() {
         {receiveMessage && (
           <div
             style={{
-              marginTop: spacing.sm,
+              display: 'flex',
+              alignItems: 'center',
+              gap: spacing.xs,
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: radii.sm,
+              backgroundColor: '#ECFDF5',
               fontSize: typography.fontSize.sm,
-              color: colors.text,
-              fontWeight: typography.fontWeight.semibold,
+              color: '#065F46',
+              fontWeight: typography.fontWeight.medium,
             }}
           >
-            ✓ {receiveMessage}
+            <Check size={16} />
+            {receiveMessage}
           </div>
         )}
 
         {receiveError && (
           <div
             style={{
-              marginTop: spacing.sm,
+              display: 'flex',
+              alignItems: 'center',
+              gap: spacing.xs,
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: radii.sm,
+              backgroundColor: '#FEF2F2',
               fontSize: typography.fontSize.sm,
-              color: colors.primary,
-              fontWeight: typography.fontWeight.semibold,
+              color: '#991B1B',
+              fontWeight: typography.fontWeight.medium,
             }}
           >
             {receiveError}
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sub-components                                                     */
+/* ------------------------------------------------------------------ */
+
+function StepHeader({
+  number,
+  title,
+  inline,
+}: {
+  number: number;
+  title: string;
+  inline?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: spacing.sm,
+        marginBottom: inline ? 0 : spacing.md,
+      }}
+    >
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '28px',
+          height: '28px',
+          borderRadius: radii.full,
+          backgroundColor: colors.primary,
+          color: colors.cream,
+          fontSize: typography.fontSize.xs,
+          fontWeight: typography.fontWeight.bold,
+          flexShrink: 0,
+        }}
+      >
+        {number}
+      </span>
+      <h2
+        style={{
+          fontSize: typography.fontSize.lg,
+          fontWeight: typography.fontWeight.bold,
+          margin: 0,
+          color: colors.text,
+        }}
+      >
+        {title}
+      </h2>
     </div>
   );
 }
