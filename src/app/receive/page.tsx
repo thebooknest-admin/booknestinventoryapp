@@ -78,10 +78,13 @@ export default function ReceivePage() {
       if (!res.ok) return;
       const data = await res.json();
       setBins(
-  (data.bins || []).map((b: { bin_code: string; display_name: string | null }) => ({
-    bin_code: b.bin_code,
-    display_name: b.display_name ?? null,
-  }))
+  (data.bins || []).map(
+    (b: { bin_code: string; display_name: string | null; age_groups?: string[] }) => ({
+      bin_code: b.bin_code,
+      display_name: b.display_name ?? null,
+      age_groups: b.age_groups ?? [],
+    })
+  )
 );
     } catch (err) {
       console.error('Failed to load bins:', err);
@@ -164,7 +167,7 @@ export default function ReceivePage() {
   console.error('Error receiving book:', err);
   const message =
     err instanceof Error ? err.message : 'Failed to receive book.';
-  setReceiveError(message);
+      setReceiveError(message);
 } finally {
       setIsReceiving(false);
     }
@@ -245,7 +248,7 @@ export default function ReceivePage() {
   console.error('Error suggesting tags/bin:', err);
   const message =
     err instanceof Error ? err.message : 'Could not suggest tags/bin.';
-      setSuggestionError(message);
+  setSuggestionError(message);
 } finally {
       setSuggestionLoading(false);
     }
