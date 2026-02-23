@@ -3,6 +3,16 @@ import { supabaseServer } from '@/lib/supabaseServer';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Map frontend age-group labels to the DB column values in `bins.age_group`.
+ */
+const AGE_GROUP_TO_DB: Record<string, string> = {
+  Hatchlings: 'hatchlings',
+  Fledglings: 'fledglings',
+  Soarers: 'soarers',
+  'Sky Readers': 'sky_readers',
+};
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -12,67 +22,42 @@ export async function POST(req: NextRequest) {
     if (!summary.trim()) {
       return NextResponse.json(
         { error: 'Summary is required for suggestions.' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const supabase = supabaseServer();
 
-    // Load all tags
-    const { data: tags, error: tagsError } = await supabase
-      .from('tags')
-      .select('id, name');
+    // 1. Load active classification keywords
+    const { data: keywords, error: kwError } = await supabase
+      .from('classification_keywords')
+      .select('bin, keyword, weight')
+      .eq('active', true);
 
-    if (tagsError) {
-      console.error('Error loading tags:', tagsError);
-      return NextResponse.json({ error: 'Failed to load tags.' }, { status: 500 });
+    if (kwError) {
+      console.error('Error loading classification_keywords:', kwError);
+      return NextResponse.json({ error: 'Failed to load keywords.' }, { status: 500 });
     }
 
-    // Load mapping for bins
-    const { data: mappings, error: mapError } = await supabase
-      .from('archive_tag_bin_map')
-      .select('tag_id, age_group, bin_id, priority');
-
-    if (mapError) {
-      console.error('Error loading tag/bin map:', mapError);
-      return NextResponse.json(
-        { error: 'Failed to load tag/bin mapping.' },
-        { status: 500 }
-      );
-    }
-
-    // Load bins for display names
-    const { data: bins, error: binsError } = await supabase
-      .from('bins')
-      .select('bin_code, display_name');
-
-    if (binsError) {
-      console.error('Error loading bins:', binsError);
-      return NextResponse.json({ error: 'Failed to load bins.' }, { status: 500 });
-    }
-
+    // 2. Score each keyword against the summary
     const normalizedSummary = summary.toLowerCase();
 
-    // Score tags based on naive keyword match of tag name in the summary.
-    const scoredTags = (tags || [])
-      .map((tag) => {
-        const name = (tag.name || '').toString();
-        const words = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-        let score = 0;
-        for (const w of words) {
-          if (!w) continue;
-          if (normalizedSummary.includes(w)) {
-            score += 1;
-          }
-        }
-        return { id: tag.id as string, name, score };
-      })
-      .filter((t) => t.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 8); // keep top few
+    // theme -> total score
+    const themeScores = new Map<string, { score: number; matchedKeywords: string[] }>();
 
-    // If nothing matched, just bail with empty suggestions
-    if (scoredTags.length === 0) {
+    for (const kw of keywords || []) {
+      const word = (kw.keyword || '').toLowerCase();
+      if (!word || !normalizedSummary.includes(word)) continue;
+
+      const theme = (kw.bin || '').toUpperCase();
+      const existing = themeScores.get(theme) || { score: 0, matchedKeywords: [] };
+      existing.score += kw.weight || 1;
+      existing.matchedKeywords.push(word);
+      themeScores.set(theme, existing);
+    }
+
+    // No matches — return empty
+    if (themeScores.size === 0) {
       return NextResponse.json({
         age_group: ageGroup || null,
         suggested_tags: [],
@@ -80,63 +65,62 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const tagIds = scoredTags.map((t) => t.id);
-
-    // Filter mappings for these tags and (optionally) this age group
-    const relevantMappings = (mappings || []).filter((m) => {
-      const tagMatch = tagIds.includes(m.tag_id as string);
-      const ageMatch = ageGroup ? m.age_group === ageGroup : true;
-      return tagMatch && ageMatch;
-    });
-
-    // Map bin_id -> list of contributing tags
-    const binToTags = new Map<
-      string,
-      { binCode: string; age_group: string | null; tagNames: string[]; score: number }
-    >();
-
-    for (const m of relevantMappings) {
-      const binCode = (m.bin_id || '').toString();
-      if (!binCode) continue;
-      const age = (m.age_group as string) || null;
-      const tag = scoredTags.find((t) => t.id === m.tag_id);
-      const existing = binToTags.get(binCode) || {
-        binCode,
-        age_group: age,
-        tagNames: [] as string[],
-        score: 0,
-      };
-      if (tag) {
-        existing.tagNames.push(tag.name);
-        existing.score += tag.score;
-      }
-      binToTags.set(binCode, existing);
-    }
-
-    const binArray = Array.from(binToTags.values())
+    // 3. Rank themes by score
+    const rankedThemes = Array.from(themeScores.entries())
+      .map(([theme, data]) => ({ theme, ...data }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
 
-    const binCodeToDisplay = new Map<string, string | null>();
-    for (const b of bins || []) {
-      binCodeToDisplay.set(b.bin_code as string, (b.display_name as string) || null);
+    // Collect unique matched keywords as suggested tags
+    const suggestedTags = [
+      ...new Set(rankedThemes.flatMap((t) => t.matchedKeywords)),
+    ].slice(0, 8);
+
+    // 4. Look up real bins for the top themes
+    const dbAgeGroup = ageGroup ? AGE_GROUP_TO_DB[ageGroup] || ageGroup.toLowerCase() : null;
+    const themeNames = rankedThemes.map((t) => t.theme.toLowerCase());
+
+    let binsQuery = supabase
+      .from('bins')
+      .select('bin_code, display_name, age_group, theme')
+      .eq('is_active', true)
+      .in('theme', themeNames);
+
+    if (dbAgeGroup) {
+      binsQuery = binsQuery.eq('age_group', dbAgeGroup);
     }
 
-    const suggestedBins = binArray.map((b) => {
-      const displayName = binCodeToDisplay.get(b.binCode) || null;
-      const reasonParts = [] as string[];
-      if (ageGroup) reasonParts.push(`age group ${ageGroup}`);
-      if (b.tagNames.length) reasonParts.push(`tags [${b.tagNames.join(', ')}]`);
-      return {
-        bin_code: b.binCode,
-        display_name: displayName,
-        age_group: b.age_group,
-        tag_names: b.tagNames,
-        reason: reasonParts.length ? reasonParts.join(' + ') : null,
-      };
-    });
+    const { data: matchedBins, error: binsError } = await binsQuery;
 
-    const suggestedTags = scoredTags.map((t) => t.name);
+    if (binsError) {
+      console.error('Error loading bins:', binsError);
+      return NextResponse.json({ error: 'Failed to load bins.' }, { status: 500 });
+    }
+
+    // 5. Build suggested bins, sorted by theme score
+    const suggestedBins = (matchedBins || [])
+      .map((b) => {
+        const themeKey = (b.theme || '').toUpperCase();
+        const themeData = themeScores.get(themeKey);
+        return {
+          bin_code: b.bin_code as string,
+          display_name: (b.display_name as string) || null,
+          age_group: (b.age_group as string) || null,
+          tag_names: themeData?.matchedKeywords || [],
+          reason: themeData
+            ? [
+                dbAgeGroup ? `age group ${ageGroup}` : null,
+                `keywords [${themeData.matchedKeywords.join(', ')}]`,
+              ]
+                .filter(Boolean)
+                .join(' + ')
+            : null,
+          _score: themeData?.score || 0,
+        };
+      })
+      .sort((a, b) => b._score - a._score)
+      .slice(0, 5)
+      .map(({ _score, ...rest }) => rest); // strip internal score
 
     return NextResponse.json({
       age_group: ageGroup || null,
