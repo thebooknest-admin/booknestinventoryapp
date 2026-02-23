@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Sparkles, RotateCcw, Copy, Info } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Sparkles, RotateCcw, Copy, Check, Info } from 'lucide-react';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 
 interface BookDetails {
@@ -47,6 +47,13 @@ const AGE_GROUP_OPTIONS = [
   { value: 'Sky Readers', label: 'Sky Readers (9-12)' },
 ];
 
+const AGE_TO_BIN_PREFIX: Record<string, string> = {
+  Hatchlings: 'HATCH',
+  Fledglings: 'FLED',
+  Soarers: 'SOAR',
+  'Sky Readers': 'SKY',
+};
+
 export default function ReceivePage() {
   const [isbnInput, setIsbnInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -60,7 +67,7 @@ export default function ReceivePage() {
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
 
-  // New: helper for summary-based tag/bin suggestions
+  // Helper for summary-based tag/bin suggestions
   const [summaryText, setSummaryText] = useState('');
   const [suggestAgeGroup, setSuggestAgeGroup] = useState('');
   const [suggestionLoading, setSuggestionLoading] = useState(false);
@@ -68,9 +75,34 @@ export default function ReceivePage() {
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [suggestedBins, setSuggestedBins] = useState<SuggestTagsAndBinResponse['suggested_bins']>([]);
 
+  // Clipboard feedback
+  const [copied, setCopied] = useState(false);
+
+  // Ref for auto-focusing ISBN input
+  const isbnRef = useRef<HTMLInputElement>(null);
+
+  // Filter bins by selected age group
+  const filteredBins = ageGroup
+    ? bins.filter((b) => {
+        const prefix = AGE_TO_BIN_PREFIX[ageGroup];
+        return prefix ? b.bin_code.startsWith(prefix) : true;
+      })
+    : bins;
+
   useEffect(() => {
     loadBins();
   }, []);
+
+  // Clear bin selection when age group changes and current bin doesn't match
+  useEffect(() => {
+    if (ageGroup && bin) {
+      const prefix = AGE_TO_BIN_PREFIX[ageGroup];
+      if (prefix && !bin.startsWith(prefix)) {
+        setBin('');
+        setBinHelp(null);
+      }
+    }
+  }, [ageGroup, bin]);
 
   async function loadBins() {
     try {
@@ -157,7 +189,13 @@ export default function ReceivePage() {
         throw new Error(body?.error || 'Failed to receive book');
       }
 
-      setReceiveMessage('Book received into inventory.');
+      setReceiveMessage(`Book received into inventory — ${book.title} → ${bin}`);
+
+      // Auto-reset after short delay so you can scan the next book
+      setTimeout(() => {
+        handleNewScan();
+        isbnRef.current?.focus();
+      }, 1500);
     } catch (err: unknown) {
       console.error('Error receiving book:', err);
       setReceiveError(err instanceof Error ? err.message : 'Failed to receive book.');
@@ -181,7 +219,7 @@ export default function ReceivePage() {
     }
   }
 
-  function handleNewScan() {
+  const handleNewScan = useCallback(() => {
     setIsbnInput('');
     setBook(null);
     setAgeGroup('');
@@ -195,7 +233,8 @@ export default function ReceivePage() {
     setSuggestedTags([]);
     setSuggestedBins([]);
     setSuggestionError(null);
-  }
+    setCopied(false);
+  }, []);
 
   async function handleSuggestTagsAndBin() {
     const summary = summaryText.trim();
@@ -243,6 +282,16 @@ export default function ReceivePage() {
     } finally {
       setSuggestionLoading(false);
     }
+  }
+
+  function handleCopyIsbn() {
+    if (!book) return;
+    navigator.clipboard.writeText(book.isbn).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {
+      // Clipboard not available — fail silently
+    });
   }
 
   return (
@@ -314,6 +363,8 @@ export default function ReceivePage() {
           }}
         >
           <input
+            id="isbn-input"
+            ref={isbnRef}
             type="text"
             value={isbnInput}
             onChange={(e) => setIsbnInput(e.target.value)}
@@ -349,7 +400,8 @@ export default function ReceivePage() {
               cursor: isbnInput.trim() && !loading ? 'pointer' : 'not-allowed',
             }}
           >
-            {loading ? 'Looking up…' : 'Lookup'}</button>
+            {loading ? 'Looking up…' : 'Lookup'}
+          </button>
         </div>
 
         {book && (
@@ -362,7 +414,7 @@ export default function ReceivePage() {
           >
             <button
               type="button"
-              onClick={() => navigator.clipboard.writeText(book.isbn)}
+              onClick={handleCopyIsbn}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -375,7 +427,7 @@ export default function ReceivePage() {
                 cursor: 'pointer',
               }}
             >
-              <Copy size={14} /> ISBN {book.isbn}
+              {copied ? <Check size={14} /> : <Copy size={14} />} ISBN {book.isbn}
             </button>
           </div>
         )}
@@ -410,7 +462,10 @@ export default function ReceivePage() {
           </h2>
           <button
             type="button"
-            onClick={handleNewScan}
+            onClick={() => {
+              handleNewScan();
+              isbnRef.current?.focus();
+            }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -429,6 +484,7 @@ export default function ReceivePage() {
 
         <div style={{ marginBottom: spacing.md }}>
           <label
+            htmlFor="book-title"
             style={{
               display: 'block',
               fontSize: typography.fontSize.xs,
@@ -442,6 +498,7 @@ export default function ReceivePage() {
             Title
           </label>
           <input
+            id="book-title"
             type="text"
             value={book?.title || ''}
             onChange={(e) =>
@@ -462,6 +519,7 @@ export default function ReceivePage() {
 
         <div style={{ marginBottom: spacing.md }}>
           <label
+            htmlFor="book-author"
             style={{
               display: 'block',
               fontSize: typography.fontSize.xs,
@@ -475,6 +533,7 @@ export default function ReceivePage() {
             Author
           </label>
           <input
+            id="book-author"
             type="text"
             value={book?.author || ''}
             onChange={(e) =>
@@ -547,6 +606,7 @@ export default function ReceivePage() {
           {/* Age group */}
           <div>
             <label
+              htmlFor="age-group"
               style={{
                 display: 'block',
                 fontSize: typography.fontSize.xs,
@@ -560,6 +620,7 @@ export default function ReceivePage() {
               Age group
             </label>
             <select
+              id="age-group"
               value={ageGroup}
               onChange={(e) => setAgeGroup(e.target.value)}
               style={{
@@ -582,6 +643,7 @@ export default function ReceivePage() {
           {/* Bin */}
           <div>
             <label
+              htmlFor="bin-select"
               style={{
                 display: 'block',
                 fontSize: typography.fontSize.xs,
@@ -593,6 +655,17 @@ export default function ReceivePage() {
               }}
             >
               Bin location
+              {ageGroup && (
+                <span
+                  style={{
+                    fontWeight: typography.fontWeight.normal,
+                    textTransform: 'none',
+                    marginLeft: spacing.xs,
+                  }}
+                >
+                  — showing {AGE_TO_BIN_PREFIX[ageGroup] || ''} bins
+                </span>
+              )}
             </label>
             <div
               style={{
@@ -602,6 +675,7 @@ export default function ReceivePage() {
               }}
             >
               <select
+                id="bin-select"
                 value={bin}
                 onChange={(e) => {
                   setBin(e.target.value);
@@ -617,7 +691,7 @@ export default function ReceivePage() {
                 }}
               >
                 <option value="">Select bin…</option>
-                {bins.map((b) => (
+                {filteredBins.map((b) => (
                   <option key={b.bin_code} value={b.bin_code}>
                     {b.bin_code}
                     {b.display_name && b.display_name !== b.bin_code
@@ -767,6 +841,7 @@ export default function ReceivePage() {
           >
             <div>
               <label
+                htmlFor="summary-text"
                 style={{
                   display: 'block',
                   fontSize: typography.fontSize.xs,
@@ -780,6 +855,7 @@ export default function ReceivePage() {
                 Paste summary or notes
               </label>
               <textarea
+                id="summary-text"
                 value={summaryText}
                 onChange={(e) => {
                   setSummaryText(e.target.value);
@@ -799,6 +875,7 @@ export default function ReceivePage() {
 
             <div>
               <label
+                htmlFor="suggest-age-group"
                 style={{
                   display: 'block',
                   fontSize: typography.fontSize.xs,
@@ -812,6 +889,7 @@ export default function ReceivePage() {
                 Age group for suggestions (optional)
               </label>
               <select
+                id="suggest-age-group"
                 value={suggestAgeGroup}
                 onChange={(e) => setSuggestAgeGroup(e.target.value)}
                 style={{
@@ -835,7 +913,8 @@ export default function ReceivePage() {
                   style={{
                     marginTop: spacing.sm,
                     fontSize: typography.fontSize.xs,
-                    color: colors.textLight,
+                    color: colors.primary,
+                    fontWeight: typography.fontWeight.semibold,
                   }}
                 >
                   {suggestionError}
@@ -968,10 +1047,11 @@ export default function ReceivePage() {
             style={{
               marginTop: spacing.sm,
               fontSize: typography.fontSize.sm,
-              color: colors.textLight,
+              color: colors.text,
+              fontWeight: typography.fontWeight.semibold,
             }}
           >
-            {receiveMessage}
+            ✓ {receiveMessage}
           </div>
         )}
 
@@ -980,7 +1060,8 @@ export default function ReceivePage() {
             style={{
               marginTop: spacing.sm,
               fontSize: typography.fontSize.sm,
-              color: colors.textLight,
+              color: colors.primary,
+              fontWeight: typography.fontWeight.semibold,
             }}
           >
             {receiveError}
