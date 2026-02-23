@@ -144,12 +144,23 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  if (!bookData) {
-    return NextResponse.json(
-      { error: 'Book not found in any source' },
-      { status: 404 }
-    );
-  }
+if (!bookData) {
+  // Fail soft: respond 200 with empty fields so the UI can still proceed
+  return NextResponse.json(
+    {
+      isbn,
+      title: '',
+      author: '',
+      coverUrl: null,
+      description: null,
+      subjects: [],
+      pageCount: null,
+      publishedDate: null,
+      maturityRating: null,
+    },
+    { status: 200 }
+  );
+}
 
-  return NextResponse.json(bookData);
+return NextResponse.json(bookData);
 }
