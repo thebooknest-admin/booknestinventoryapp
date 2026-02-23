@@ -77,15 +77,10 @@ export default function ReceivePage() {
       const res = await fetch('/api/bins', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
-      setBins(
-  (data.bins || []).map(
-    (b: { bin_code: string; display_name: string | null; age_groups?: string[] }) => ({
-      bin_code: b.bin_code,
-      display_name: b.display_name ?? null,
-      age_groups: b.age_groups ?? [],
-    })
-  )
-);
+      setBins((data.bins || []).map((b: { bin_code: string; display_name?: string | null }) => ({
+        bin_code: b.bin_code,
+        display_name: b.display_name ?? null,
+      })));
     } catch (err) {
       console.error('Failed to load bins:', err);
     }
@@ -163,12 +158,10 @@ export default function ReceivePage() {
       }
 
       setReceiveMessage('Book received into inventory.');
-    } catch (err) {
-  console.error('Error receiving book:', err);
-  const message =
-    err instanceof Error ? err.message : 'Failed to receive book.';
-      setReceiveError(message);
-} finally {
+    } catch (err: unknown) {
+      console.error('Error receiving book:', err);
+      setReceiveError(err instanceof Error ? err.message : 'Failed to receive book.');
+    } finally {
       setIsReceiving(false);
     }
   }
@@ -244,12 +237,10 @@ export default function ReceivePage() {
       if (!ageGroup && data.age_group) {
         setAgeGroup(data.age_group);
       }
-    } catch (err) {
-  console.error('Error suggesting tags/bin:', err);
-  const message =
-    err instanceof Error ? err.message : 'Could not suggest tags/bin.';
-  setSuggestionError(message);
-} finally {
+    } catch (err: unknown) {
+      console.error('Error suggesting tags/bin:', err);
+      setSuggestionError(err instanceof Error ? err.message : 'Could not suggest tags/bin.');
+    } finally {
       setSuggestionLoading(false);
     }
   }
