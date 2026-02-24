@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { colors, typography, spacing, radii } from '@/styles/tokens';
+import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import { supabaseServer } from '@/lib/supabaseServer';
 import MarkAsShippedButton from '@/components/MarkAsShippedButton';
 import HomeButton from '@/components/HomeButton';
@@ -8,13 +8,13 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 interface ShipPageProps {
-  params: {
+  params: Promise<{
     bundleId: string;
-  };
+  }>;
 }
 
 export default async function ShipBundle({ params }: ShipPageProps) {
-  const bundleId = params.bundleId;
+  const { bundleId } = await params;
   const supabase = supabaseServer();
 
   // Load shipment row
