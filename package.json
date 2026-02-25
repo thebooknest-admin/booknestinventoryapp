@@ -11,6 +11,7 @@
     "fetch-and-tag": "node src/scripts/fetchAndTagBooks.js"
   },
   "dependencies": {
+    "@easypost/api": "^8.6.0",
     "@supabase/supabase-js": "^2.93.3",
     "axios": "^1.13.4",
     "dotenv": "^17.2.3",

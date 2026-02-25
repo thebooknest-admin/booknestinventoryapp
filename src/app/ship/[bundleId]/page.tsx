@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { supabaseServer } from '@/lib/supabaseServer';
-import MarkAsShippedButton from '@/components/MarkAsShippedButton';
+import BuyLabelButton from '@/components/BuyLabelButton';
 import PrintLabelButton from '@/components/PrintLabelButton';
 import HomeButton from '@/components/HomeButton';
 
@@ -48,7 +48,6 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     console.error('Error loading shipment:', shipmentError);
   }
 
-  // If there is no shipment at all, show a friendly message
   if (!shipment) {
     return (
       <div
@@ -100,13 +99,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             padding: spacing.lg,
           }}
         >
-          <p
-            style={{
-              margin: 0,
-              fontSize: typography.fontSize.sm,
-              color: colors.text,
-            }}
-          >
+          <p style={{ margin: 0, fontSize: typography.fontSize.sm, color: colors.text }}>
             This shipment could not be found or loaded. It may be a test row, or it may have
             been removed.
           </p>
@@ -132,7 +125,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     }
   }
 
-  // Load shipping address: try shipment.address_id first, fall back to member default
+  // Load shipping address
   let shippingAddress: ShippingAddress | null = null;
 
   if (shipment.address_id) {
@@ -147,7 +140,6 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     }
   }
 
-  // Fallback: member's default address
   if (!shippingAddress && shipment.member_id) {
     const { data: addr } = await supabase
       .from('member_addresses')
@@ -161,7 +153,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     }
   }
 
-  // Count books in this shipment
+  // Count books
   const { count: bookCount } = await supabase
     .from('shipment_books')
     .select('id', { count: 'exact', head: true })
@@ -230,14 +222,14 @@ export default async function ShipBundle({ params }: ShipPageProps) {
                 color: colors.textLight,
               }}
             >
-              Review the order, confirm packing, then mark this bundle as shipped.
+              Review the order, buy a shipping label, and pack it up.
             </p>
           </div>
           <HomeButton />
         </div>
       </header>
 
-      {/* Order summary + Address — side by side */}
+      {/* Order summary + Address */}
       <div
         style={{
           display: 'grid',
@@ -303,13 +295,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             </div>
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: spacing.md,
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md }}>
             <SummaryField label="Order #" value={shipment.order_number || '—'} />
             <SummaryField label="Books" value={`${books}`} emphasize />
             <SummaryField label="Est. weight" value={`${totalWeight} lbs`} />
@@ -396,7 +382,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
         </section>
       </div>
 
-      {/* Mark as shipped */}
+      {/* Buy label / Already shipped */}
       <section
         style={{
           backgroundColor: colors.surface,
@@ -417,28 +403,61 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             marginBottom: spacing.sm,
           }}
         >
-          Mark as shipped
+          {isAlreadyShipped ? 'Shipment complete' : 'Buy shipping label'}
         </h2>
 
         {isAlreadyShipped ? (
-          <div
-            style={{
-              padding: `${spacing.sm} ${spacing.md}`,
-              borderRadius: radii.sm,
-              backgroundColor: '#ECFDF5',
-              fontSize: typography.fontSize.sm,
-              color: '#065F46',
-              fontWeight: typography.fontWeight.medium,
-            }}
-          >
-            ✓ This shipment has been marked as shipped.
-            {shipment.tracking_number && (
-              <span style={{ fontFamily: 'monospace', marginLeft: spacing.sm }}>
-                Tracking: {shipment.tracking_number}
-              </span>
+          <div>
+            <div
+              style={{
+                padding: `${spacing.sm} ${spacing.md}`,
+                borderRadius: radii.sm,
+                backgroundColor: '#ECFDF5',
+                fontSize: typography.fontSize.sm,
+                color: '#065F46',
+                fontWeight: typography.fontWeight.medium,
+                marginBottom: spacing.md,
+              }}
+            >
+              ✓ This shipment has been shipped.
+              {shipment.tracking_number && (
+                <span style={{ fontFamily: 'monospace', marginLeft: spacing.sm }}>
+                  Tracking: {shipment.tracking_number}
+                </span>
+              )}
+              {shipment.carrier && (
+                <span style={{ marginLeft: spacing.sm }}>
+                  via {shipment.carrier}
+                </span>
+              )}
+            </div>
+
+            {shipment.label_url && (
+              <a
+                href={shipment.label_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: spacing.xs,
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  backgroundColor: colors.surface,
+                  color: colors.primary,
+                  border: `2px solid ${colors.primary}`,
+                  borderRadius: radii.sm,
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.bold,
+                  textTransform: 'uppercase',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                Reprint label ↗
+              </a>
             )}
           </div>
-        ) : (
+        ) : shippingAddress ? (
           <>
             <p
               style={{
@@ -448,10 +467,20 @@ export default async function ShipBundle({ params }: ShipPageProps) {
                 marginBottom: spacing.md,
               }}
             >
-              Enter the tracking number and mark this bundle as shipped.
+              Get USPS rates and purchase a shipping label. The tracking number and label will be saved automatically.
             </p>
-            <MarkAsShippedButton bundleId={bundleId} />
+            <BuyLabelButton shipmentId={bundleId} />
           </>
+        ) : (
+          <p
+            style={{
+              fontSize: typography.fontSize.sm,
+              color: colors.textLight,
+              margin: 0,
+            }}
+          >
+            Add a shipping address above before buying a label.
+          </p>
         )}
       </section>
 
@@ -487,8 +516,9 @@ export default async function ShipBundle({ params }: ShipPageProps) {
           <li>Verify all books are packed</li>
           <li>Include packing slip</li>
           <li>Seal package securely</li>
-          <li>Apply shipping label with correct address</li>
-          <li>Enter tracking number above</li>
+          <li>Buy label and print it above</li>
+          <li>Apply label to package</li>
+          <li>Drop off at USPS or schedule pickup</li>
         </ul>
       </section>
     </div>
