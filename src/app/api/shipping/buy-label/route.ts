@@ -36,11 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Buy the label through EasyPost
-    const purchased = await easypost.Shipment.buy(
-  easypostShipmentId,
-  // @ts-expect-error EasyPost API expects {rate: {id}} but types say string
-  { rate: { id: rateId } },
-);
+    const purchased = await easypost.Shipment.buy(easypostShipmentId, rateId);
     const trackingNumber = purchased.tracking_code || null;
     const labelUrl = purchased.postage_label?.label_url || null;
     const carrier = purchased.selected_rate?.carrier || null;
