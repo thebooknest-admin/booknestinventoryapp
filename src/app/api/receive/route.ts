@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     const skuNumber = counter.next_number;
-    const sku = `${prefix}-${String(skuNumber).padStart(4, '0')}`;
+    const sku = `BN-${prefix}-${String(skuNumber).padStart(4, '0')}`;
 
     // Increment the counter
     const { error: incErr } = await supabase
