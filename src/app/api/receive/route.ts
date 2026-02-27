@@ -8,6 +8,13 @@ const AGE_TO_PREFIX: Record<string, string> = {
   'Sky Readers': 'SKY',
 };
 
+const AGE_TO_DB: Record<string, string> = {
+  Hatchlings: 'hatchlings',
+  Fledglings: 'fledglings',
+  Soarers: 'soarers',
+  'Sky Readers': 'sky_readers',
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -107,13 +114,14 @@ export async function POST(request: NextRequest) {
     }
 
     /* ---- 3. Insert book_copies row ---- */
+    const dbAgeGroup = AGE_TO_DB[age_group];
     const { data: copy, error: copyErr } = await supabase
       .from('book_copies')
       .insert({
         sku,
         book_title_id: bookTitleId,
         isbn,
-        age_group,
+        age_group: dbAgeGroup,
         bin: bin_code,
         bin_id: bin_code,
         status: 'in_house',
