@@ -148,6 +148,14 @@ export default function ReceivePage() {
   const [suggestedBins, setSuggestedBins] = useState<SuggestTagsAndBinResponse['suggested_bins']>([]);
   const [helperOpen, setHelperOpen] = useState(false);
 
+  // Age range → Book Nest group helper
+  const [ageRangeInput, setAgeRangeInput] = useState('');
+  const [ageRangeResult, setAgeRangeResult] = useState<{
+    group: string;
+    label: string;
+    overlap: string;
+  } | null>(null);
+
   // UI micro-state
   const [copied, setCopied] = useState(false);
   const isbnRef = useRef<HTMLInputElement>(null);
@@ -313,6 +321,8 @@ export default function ReceivePage() {
     setSuggestionError(null);
     setCopied(false);
     setHelperOpen(false);
+    setAgeRangeInput('');
+    setAgeRangeResult(null);
   }, []);
 
   async function handleSuggestTagsAndBin() {
@@ -358,6 +368,58 @@ export default function ReceivePage() {
     } finally {
       setSuggestionLoading(false);
     }
+  }
+
+  function resolveAgeRange(input: string) {
+    const cleaned = input.replace(/\s/g, '');
+    // Support formats: "7-10", "7–10", "7 to 10", single number "5"
+    const match = cleaned.match(/^(\d+)(?:[-–](\d+))?$/);
+    if (!match) {
+      // Try "X to Y"
+      const toMatch = input.trim().match(/^(\d+)\s*to\s*(\d+)$/i);
+      if (!toMatch) {
+        setAgeRangeResult(null);
+        return;
+      }
+      const lo = parseInt(toMatch[1], 10);
+      const hi = parseInt(toMatch[2], 10);
+      return resolveFromRange(lo, hi);
+    }
+    const lo = parseInt(match[1], 10);
+    const hi = match[2] ? parseInt(match[2], 10) : lo;
+    resolveFromRange(lo, hi);
+  }
+
+  function resolveFromRange(lo: number, hi: number) {
+    const groups = [
+      { value: 'Hatchlings', label: 'Hatchlings (0–2)', min: 0, max: 2 },
+      { value: 'Fledglings', label: 'Fledglings (3–5)', min: 3, max: 5 },
+      { value: 'Soarers', label: 'Soarers (6–8)', min: 6, max: 8 },
+      { value: 'Sky Readers', label: 'Sky Readers (9–12)', min: 9, max: 12 },
+    ];
+
+    let bestGroup = groups[0];
+    let bestOverlap = -1;
+
+    for (const g of groups) {
+      const overlapLo = Math.max(lo, g.min);
+      const overlapHi = Math.min(hi, g.max);
+      const overlap = Math.max(0, overlapHi - overlapLo + 1);
+      // Weighted: more overlap wins; tie-break by younger group (first in list)
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestGroup = g;
+      }
+    }
+
+    const overlapLo = Math.max(lo, bestGroup.min);
+    const overlapHi = Math.min(hi, bestGroup.max);
+
+    setAgeRangeResult({
+      group: bestGroup.value,
+      label: bestGroup.label,
+      overlap: overlapLo === overlapHi ? `age ${overlapLo}` : `ages ${overlapLo}–${overlapHi}`,
+    });
   }
 
   function handleCopyIsbn() {
@@ -587,6 +649,75 @@ export default function ReceivePage() {
                 </option>
               ))}
             </select>
+
+            {/* Age range → Book Nest group helper */}
+            <div
+              style={{
+                marginTop: spacing.sm,
+                display: 'flex',
+                gap: spacing.xs,
+                alignItems: 'center',
+              }}
+            >
+              <input
+                type="text"
+                value={ageRangeInput}
+                onChange={(e) => {
+                  setAgeRangeInput(e.target.value);
+                  if (e.target.value.trim()) resolveAgeRange(e.target.value);
+                  else setAgeRangeResult(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && ageRangeResult) {
+                    e.preventDefault();
+                    setAgeGroup(ageRangeResult.group);
+                    setAgeRangeInput('');
+                    setAgeRangeResult(null);
+                  }
+                }}
+                placeholder="Suggested age, e.g. 7-10"
+                style={{
+                  ...inputStyle,
+                  flex: 1,
+                  padding: `4px ${spacing.sm}`,
+                  fontSize: typography.fontSize.xs,
+                  fontFamily: 'monospace',
+                }}
+              />
+              {ageRangeResult && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgeGroup(ageRangeResult.group);
+                    setAgeRangeInput('');
+                    setAgeRangeResult(null);
+                  }}
+                  style={{
+                    ...pillBtnStyle,
+                    backgroundColor: colors.primary,
+                    color: colors.cream,
+                    border: 'none',
+                    fontSize: typography.fontSize.xs,
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                  }}
+                >
+                  → {ageRangeResult.label}
+                </button>
+              )}
+            </div>
+            {ageRangeResult && (
+              <div
+                style={{
+                  marginTop: '4px',
+                  fontSize: typography.fontSize.xs,
+                  color: colors.textMuted,
+                  fontStyle: 'italic',
+                }}
+              >
+                Best match based on {ageRangeResult.overlap} overlap
+              </div>
+            )}
           </div>
 
           {/* Bin */}
