@@ -81,6 +81,13 @@ export default function NavBar({ user }: { user: string | null }) {
             >
               Returns
             </Link>
+
+            <Link
+              href="/inventory"
+              style={{ ...linkStyle, ...(isActive('/inventory') ? activeStyle : {}) }}
+            >
+              Inventory
+            </Link>
           </nav>
         </div>
 
