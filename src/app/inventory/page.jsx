@@ -22,7 +22,7 @@ import { useState, useEffect, useMemo } from "react";
 // ──────────────────────────────────────────────
 //  ⬇️  UPDATE THIS IMPORT to match your project
 // ──────────────────────────────────────────────
-// import { supabase } from "@/lib/supabase";
+ import { supabase } from "@/lib/supabase";
 
 // ──────────────────────────────────────────────
 //  DEMO MODE — set false once Supabase is wired
@@ -91,7 +91,7 @@ const WARN = 20;
 async function fetchBins() {
   if (DEMO_MODE) return DEMO_BINS;
 
-  /*
+  
   const { data, error } = await supabase
     .from("bins")
     .select("bin_code, display_name, age_group, theme, current_count, capacity, is_active")
@@ -100,14 +100,14 @@ async function fetchBins() {
     .order("display_name");
   if (error) { console.error("fetchBins error:", error); return []; }
   return data;
-  */
+  
   return [];
 }
 
 async function fetchBooksForBin(displayName) {
   if (DEMO_MODE) return DEMO_BOOKS.filter(b => b.bin_id === displayName);
 
-  /*
+  
   const { data, error } = await supabase
     .from("book_copies")
     .select(`
@@ -127,7 +127,7 @@ async function fetchBooksForBin(displayName) {
     bin_id: r.bin_id,
     condition: r.condition,
   }));
-  */
+  
   return [];
 }
 
