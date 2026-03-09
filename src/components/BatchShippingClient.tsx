@@ -999,7 +999,7 @@ export default function BatchShippingClient({ tiers }: { tiers: TierGroup[] }) {
         <div style={{ display: 'flex', gap: spacing.md }}>
           {allLabelUrls.length > 1 && (
             <button
-              onClick={() => allLabelUrls.forEach((url) => window.open(url, '_blank'))}
+              onClick={() => allLabelUrls.forEach((url) => url && window.open(url, '_blank'))}
               style={{
                 padding: `${spacing.sm} ${spacing.lg}`,
                 backgroundColor: colors.primary,
