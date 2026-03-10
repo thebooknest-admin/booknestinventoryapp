@@ -147,7 +147,7 @@ export default function BatchShippingClient({ tiers }: { tiers: TierGroup[] }) {
     setRatesError(null);
 
     try {
-      const res = await fetch('/api/shipping/batch-rates', {
+      const res = await fetch('/api/shipping/rates/batch-rates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shipmentIds: [...selectedIds] }),
