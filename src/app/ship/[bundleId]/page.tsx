@@ -1,9 +1,11 @@
 import Link from 'next/link';
-import { colors, typography, spacing, radii } from '@/styles/tokens';
+import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import { supabaseServer } from '@/lib/supabaseServer';
+import { getTierDisplayName, getTierBookCount } from '@/lib/types';
 import BuyLabelButton from '@/components/BuyLabelButton';
 import PrintLabelButton from '@/components/PrintLabelButton';
 import HomeButton from '@/components/HomeButton';
+import ShippingChecklist from '@/components/ShippingChecklist';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,6 +34,29 @@ const RETURN_ADDRESS: ShippingAddress = {
   zip: '25438',
   country: 'US',
 };
+
+// ── Known tiers for badge detection ────────────────────────────────
+const KNOWN_TIERS = [
+  'little-nest', 'cozy-nest', 'story-nest',
+  'growing-nest', 'family-nest',
+  'little_nest', 'cozy_nest', 'story_nest',
+  'growing_nest', 'family_nest',
+];
+
+function hasTier(tier: string | null | undefined): boolean {
+  if (!tier || !tier.trim()) return false;
+  return KNOWN_TIERS.includes(tier.toLowerCase().replace(/\s+/g, '-'));
+}
+
+// ── Progress step helper ───────────────────────────────────────────
+type ShipStep = 'picked' | 'pack' | 'label' | 'shipped';
+
+function getCurrentStep(status: string, hasLabel: boolean): ShipStep {
+  if (status === 'shipped') return 'shipped';
+  if (hasLabel) return 'label';
+  // Status is 'shipping' which means picked & ready to pack
+  return 'pack';
+}
 
 export default async function ShipBundle({ params }: ShipPageProps) {
   const { bundleId } = await params;
@@ -108,20 +133,22 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     );
   }
 
-  // Load member
+  // Load member (now including tier)
   let memberName = 'Member';
   let memberEmail = '—';
+  let memberTier: string | null = null;
 
   if (shipment.member_id) {
     const { data: memberData } = await supabase
       .from('members')
-      .select('name, email')
+      .select('name, email, tier')
       .eq('id', shipment.member_id)
       .maybeSingle();
 
     if (memberData) {
       memberName = memberData.name || memberName;
       memberEmail = memberData.email || memberEmail;
+      memberTier = memberData.tier || null;
     }
   }
 
@@ -153,16 +180,21 @@ export default async function ShipBundle({ params }: ShipPageProps) {
     }
   }
 
-  // Count books
+  // Count books (picked)
   const { count: bookCount } = await supabase
     .from('shipment_books')
     .select('id', { count: 'exact', head: true })
     .eq('shipment_id', bundleId);
 
-  const books = bookCount ?? 0;
-  const totalWeight = (books * 0.5).toFixed(1);
+  const pickedBooks = bookCount ?? 0;
+  const expectedBooks = memberTier ? getTierBookCount(memberTier) : pickedBooks;
+  const isFull = pickedBooks >= expectedBooks;
+  const isUnderfilled = pickedBooks > 0 && pickedBooks < expectedBooks;
+  const totalWeight = (pickedBooks * 0.5).toFixed(1);
 
   const isAlreadyShipped = shipment.status === 'shipped';
+  const hasLabel = !!shipment.label_url || !!shipment.tracking_number;
+  const currentStep = getCurrentStep(shipment.status, hasLabel);
 
   return (
     <div
@@ -229,6 +261,9 @@ export default async function ShipBundle({ params }: ShipPageProps) {
         </div>
       </header>
 
+      {/* ── Progress Stepper ──────────────────────────────────── */}
+      <ProgressStepper currentStep={currentStep} />
+
       {/* Order summary + Address */}
       <div
         style={{
@@ -245,6 +280,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             border: `2px solid ${colors.border}`,
             borderRadius: radii.md,
             padding: spacing.lg,
+            boxShadow: shadows.sm,
           }}
         >
           <h2
@@ -261,6 +297,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             Order summary
           </h2>
 
+          {/* Member info */}
           <div style={{ marginBottom: spacing.lg }}>
             <div
               style={{
@@ -276,18 +313,63 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             </div>
             <div
               style={{
-                fontSize: typography.fontSize.base,
-                fontWeight: typography.fontWeight.semibold,
-                color: colors.text,
+                display: 'flex',
+                alignItems: 'center',
+                gap: spacing.sm,
+                marginBottom: spacing.xs,
               }}
             >
-              {memberName}
+              <span
+                style={{
+                  fontSize: typography.fontSize.base,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.text,
+                }}
+              >
+                {memberName}
+              </span>
+              {/* Tier badge */}
+              {hasTier(memberTier) ? (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    padding: `2px ${spacing.sm}`,
+                    backgroundColor: colors.sageMist,
+                    color: colors.deepCocoa,
+                    fontSize: '0.65rem',
+                    fontWeight: typography.fontWeight.bold,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    borderRadius: radii.sm,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {getTierDisplayName(memberTier!)}
+                </span>
+              ) : (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    padding: `2px ${spacing.sm}`,
+                    backgroundColor: '#F3F4F6',
+                    color: '#9CA3AF',
+                    fontSize: '0.65rem',
+                    fontWeight: typography.fontWeight.bold,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    borderRadius: radii.sm,
+                    border: '1px dashed #D1D5DB',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  No tier
+                </span>
+              )}
             </div>
             <div
               style={{
                 fontSize: typography.fontSize.sm,
                 color: colors.textLight,
-                marginTop: spacing.xs,
                 fontFamily: 'monospace',
               }}
             >
@@ -295,11 +377,81 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             </div>
           </div>
 
+          {/* Summary grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md }}>
             <SummaryField label="Order #" value={shipment.order_number || '—'} />
-            <SummaryField label="Books" value={`${books}`} emphasize />
+
+            {/* Books picked / expected */}
+            <div>
+              <div
+                style={{
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                  fontWeight: typography.fontWeight.semibold,
+                }}
+              >
+                Books
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: typography.fontSize['2xl'],
+                  fontWeight: typography.fontWeight.bold,
+                  color: isUnderfilled
+                    ? '#B45309'
+                    : isFull
+                      ? '#065F46'
+                      : colors.text,
+                }}
+              >
+                {isUnderfilled && (
+                  <span style={{ fontSize: typography.fontSize.sm }} title="Bundle is underfilled">
+                    ⚠️
+                  </span>
+                )}
+                {isFull && (
+                  <span style={{ fontSize: typography.fontSize.sm, color: '#065F46' }} title="Bundle is complete">
+                    ✓
+                  </span>
+                )}
+                {pickedBooks}/{expectedBooks}
+              </div>
+              {isUnderfilled && (
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: '#B45309',
+                    marginTop: '2px',
+                  }}
+                >
+                  Bundle is short {expectedBooks - pickedBooks} book{expectedBooks - pickedBooks !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+
             <SummaryField label="Est. weight" value={`${totalWeight} lbs`} />
-            <SummaryField label="Status" value={shipment.status} />
+
+            {/* Styled status badge */}
+            <div>
+              <div
+                style={{
+                  fontSize: typography.fontSize.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: colors.textLight,
+                  marginBottom: spacing.xs,
+                  fontWeight: typography.fontWeight.semibold,
+                }}
+              >
+                Status
+              </div>
+              <StatusBadge status={shipment.status} />
+            </div>
           </div>
         </section>
 
@@ -312,6 +464,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
             padding: spacing.lg,
             display: 'flex',
             flexDirection: 'column',
+            boxShadow: shadows.sm,
           }}
         >
           <h2
@@ -371,12 +524,29 @@ export default async function ShipBundle({ params }: ShipPageProps) {
                 padding: spacing.md,
                 borderRadius: radii.sm,
                 backgroundColor: '#FEF2F2',
-                fontSize: typography.fontSize.sm,
-                color: '#991B1B',
+                border: '1px solid #FECACA',
               }}
             >
-              No shipping address found for this member. Please add an address before
-              shipping.
+              <div
+                style={{
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: '#991B1B',
+                  marginBottom: spacing.xs,
+                }}
+              >
+                No shipping address found
+              </div>
+              <div
+                style={{
+                  fontSize: typography.fontSize.xs,
+                  color: '#B91C1C',
+                  lineHeight: typography.lineHeight.normal,
+                }}
+              >
+                This member doesn&apos;t have a shipping address on file. Add one in the Members
+                page before shipping this order.
+              </div>
             </div>
           )}
         </section>
@@ -390,6 +560,7 @@ export default async function ShipBundle({ params }: ShipPageProps) {
           borderRadius: radii.md,
           padding: spacing.lg,
           marginBottom: spacing.lg,
+          boxShadow: shadows.sm,
         }}
       >
         <h2
@@ -413,23 +584,30 @@ export default async function ShipBundle({ params }: ShipPageProps) {
                 padding: `${spacing.sm} ${spacing.md}`,
                 borderRadius: radii.sm,
                 backgroundColor: '#ECFDF5',
+                border: '1px solid #A7F3D0',
                 fontSize: typography.fontSize.sm,
                 color: '#065F46',
                 fontWeight: typography.fontWeight.medium,
                 marginBottom: spacing.md,
+                display: 'flex',
+                alignItems: 'center',
+                gap: spacing.sm,
               }}
             >
-              ✓ This shipment has been shipped.
-              {shipment.tracking_number && (
-                <span style={{ fontFamily: 'monospace', marginLeft: spacing.sm }}>
-                  Tracking: {shipment.tracking_number}
-                </span>
-              )}
-              {shipment.carrier && (
-                <span style={{ marginLeft: spacing.sm }}>
-                  via {shipment.carrier}
-                </span>
-              )}
+              <span style={{ fontSize: typography.fontSize.base }}>✓</span>
+              <span>
+                This shipment has been shipped.
+                {shipment.tracking_number && (
+                  <span style={{ fontFamily: 'monospace', marginLeft: spacing.sm }}>
+                    Tracking: {shipment.tracking_number}
+                  </span>
+                )}
+                {shipment.carrier && (
+                  <span style={{ marginLeft: spacing.sm }}>
+                    via {shipment.carrier}
+                  </span>
+                )}
+              </span>
             </div>
 
             {shipment.label_url && (
@@ -484,55 +662,173 @@ export default async function ShipBundle({ params }: ShipPageProps) {
         )}
       </section>
 
-      {/* Shipping checklist */}
-      <section
-        style={{
-          backgroundColor: colors.goldenHoney + '20',
-          border: `2px solid ${colors.goldenHoney}`,
-          borderRadius: radii.md,
-          padding: spacing.lg,
-        }}
-      >
-        <h3
-          style={{
-            fontSize: typography.fontSize.sm,
-            fontWeight: typography.fontWeight.bold,
-            color: colors.deepCocoa,
-            margin: 0,
-            marginBottom: spacing.sm,
-          }}
-        >
-          Shipping checklist
-        </h3>
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: spacing.lg,
-            color: colors.text,
-            fontSize: typography.fontSize.sm,
-            lineHeight: typography.lineHeight.relaxed,
-          }}
-        >
-          <li>Verify all books are packed</li>
-          <li>Include packing slip</li>
-          <li>Seal package securely</li>
-          <li>Buy label and print it above</li>
-          <li>Apply label to package</li>
-          <li>Drop off at USPS or schedule pickup</li>
-        </ul>
-      </section>
+      {/* ── Interactive Shipping Checklist ─────────────────────── */}
+      <ShippingChecklist isAlreadyShipped={isAlreadyShipped} />
     </div>
   );
 }
 
+// ── Progress Stepper ───────────────────────────────────────────────
+
+const STEPS: { key: ShipStep; label: string }[] = [
+  { key: 'picked', label: 'Picked' },
+  { key: 'pack', label: 'Pack' },
+  { key: 'label', label: 'Label' },
+  { key: 'shipped', label: 'Shipped' },
+];
+
+function ProgressStepper({ currentStep }: { currentStep: ShipStep }) {
+  const currentIndex = STEPS.findIndex((s) => s.key === currentStep);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        marginBottom: spacing.xl,
+        padding: `${spacing.md} ${spacing.lg}`,
+        backgroundColor: colors.surface,
+        border: `2px solid ${colors.border}`,
+        borderRadius: radii.md,
+        boxShadow: shadows.sm,
+      }}
+    >
+      {STEPS.map((step, i) => {
+        const isComplete = i < currentIndex;
+        const isCurrent = i === currentIndex;
+        const isLast = i === STEPS.length - 1;
+
+        return (
+          <div
+            key={step.key}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flex: isLast ? '0 0 auto' : 1,
+            }}
+          >
+            {/* Step circle + label */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.bold,
+                  flexShrink: 0,
+                  backgroundColor: isComplete
+                    ? '#065F46'
+                    : isCurrent
+                      ? colors.secondary
+                      : '#F3F4F6',
+                  color: isComplete || isCurrent ? '#FFFFFF' : '#9CA3AF',
+                  border: isCurrent ? `2px solid ${colors.secondary}` : 'none',
+                }}
+              >
+                {isComplete ? '✓' : i + 1}
+              </div>
+              <span
+                style={{
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: isCurrent
+                    ? typography.fontWeight.bold
+                    : typography.fontWeight.medium,
+                  color: isComplete
+                    ? '#065F46'
+                    : isCurrent
+                      ? colors.secondary
+                      : '#9CA3AF',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {step.label}
+              </span>
+            </div>
+
+            {/* Connector line */}
+            {!isLast && (
+              <div
+                style={{
+                  flex: 1,
+                  height: '2px',
+                  backgroundColor: isComplete ? '#065F46' : '#E5E7EB',
+                  margin: `0 ${spacing.sm}`,
+                  minWidth: '20px',
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Status Badge ───────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  const statusConfig: Record<string, { bg: string; color: string; border: string; label: string }> = {
+    picking: {
+      bg: '#EFF6FF',
+      color: '#1E40AF',
+      border: '#BFDBFE',
+      label: 'Picking',
+    },
+    shipping: {
+      bg: '#FFFBEB',
+      color: '#92400E',
+      border: '#FDE68A',
+      label: 'Ready to ship',
+    },
+    shipped: {
+      bg: '#ECFDF5',
+      color: '#065F46',
+      border: '#A7F3D0',
+      label: 'Shipped',
+    },
+  };
+
+  const config = statusConfig[status] || {
+    bg: '#F3F4F6',
+    color: '#6B7280',
+    border: '#D1D5DB',
+    label: status,
+  };
+
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: `${spacing.xs} ${spacing.sm}`,
+        backgroundColor: config.bg,
+        color: config.color,
+        border: `1px solid ${config.border}`,
+        borderRadius: radii.sm,
+        fontSize: typography.fontSize.xs,
+        fontWeight: typography.fontWeight.bold,
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+      }}
+    >
+      {config.label}
+    </span>
+  );
+}
+
+// ── Summary Field ──────────────────────────────────────────────────
+
 function SummaryField({
   label,
   value,
-  emphasize,
 }: {
   label: string;
   value: string;
-  emphasize?: boolean;
 }) {
   return (
     <div>
@@ -550,10 +846,8 @@ function SummaryField({
       </div>
       <div
         style={{
-          fontSize: emphasize ? typography.fontSize['2xl'] : typography.fontSize.sm,
-          fontWeight: emphasize
-            ? typography.fontWeight.bold
-            : typography.fontWeight.semibold,
+          fontSize: typography.fontSize.sm,
+          fontWeight: typography.fontWeight.semibold,
           color: colors.text,
         }}
       >
