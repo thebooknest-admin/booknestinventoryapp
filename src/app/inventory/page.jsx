@@ -79,9 +79,9 @@ const AGE_META = {
   hatchlings:    { key:"HATCH", label:"Hatchlings",  range:"0–2 yrs", emoji:"🥚", color:"#D4853A" },
   fledglings:    { key:"FLED",  label:"Fledglings",  range:"3–5 yrs", emoji:"🐣", color:"#2A9D8F" },
   soarers:       { key:"SOAR",  label:"Soarers",     range:"6–8 yrs", emoji:"🪶", color:"#264653" },
-  "sky readers": { key:"SKY",   label:"Sky Readers", range:"9–12 yrs",emoji:"🦅", color:"#C44536" },
+  sky_readers: { key:"SKY",   label:"Sky Readers", range:"9–12 yrs",emoji:"🦅", color:"#C44536" },
 };
-const AGE_ORDER = ["hatchlings", "fledglings", "soarers", "sky readers"];
+const AGE_ORDER = ["hatchlings", "fledglings", "soarers", "sky_readers"];
 const LOW = 10;
 const WARN = 20;
 
@@ -213,7 +213,7 @@ body{font-family:'DM Sans',-apple-system,sans-serif;background:var(--bg);color:v
 .close-btn{background:none;border:1.5px solid var(--brd);border-radius:8px;padding:5px 14px;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;font-family:inherit;transition:all .15s}
 .close-btn:hover{border-color:#D6D3D1;color:var(--t1)}
 
-.bg{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.bg{display:grid;grid-template-columns:1fr;gap:12px}
 .bc{border:1.5px solid var(--brd);border-radius:12px;padding:16px;cursor:pointer;transition:all .2s}
 .bc:hover{border-color:#D6D3D1;box-shadow:0 2px 8px rgba(0,0,0,.04)}
 .bc.on{border-color:var(--accent);background:#FAFAF8}
