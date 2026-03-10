@@ -89,19 +89,33 @@ const WARN = 20;
 //  Supabase fetchers (uncomment when wired up)
 // ──────────────────────────────────────────────
 async function fetchBins() {
-  if (DEMO_MODE) return DEMO_BINS;
-
-  
-  const { data, error } = await supabase
+  // Get all bins
+  const { data: bins, error: binError } = await supabase
     .from("bins")
-    .select("bin_code, display_name, age_group, theme, current_count, capacity, is_active")
+    .select("bin_code, display_name, age_group, theme, capacity, is_active")
     .order("age_group")
     .order("theme")
     .order("display_name");
-  if (error) { console.error("fetchBins error:", error); return []; }
-  return data;
-  
-  return [];
+  if (binError) { console.error("fetchBins error:", binError); return []; }
+
+  // Get live counts from book_copies
+  const { data: copies, error: copyError } = await supabase
+    .from("book_copies")
+    .select("bin_id")
+    .eq("status", "in_house");
+  if (copyError) { console.error("fetchCopies error:", copyError); return []; }
+
+  // Count per bin
+  const countMap = {};
+  copies.forEach(c => {
+    if (c.bin_id) countMap[c.bin_id] = (countMap[c.bin_id] || 0) + 1;
+  });
+
+  // Merge live counts into bins
+  return bins.map(b => ({
+    ...b,
+    current_count: countMap[b.display_name] || 0,
+  }));
 }
 
 async function fetchBooksForBin(displayName) {
