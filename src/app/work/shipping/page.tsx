@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { colors, typography, spacing, radii, shadows } from '@/styles/tokens';
 import ActionButton from '@/components/ActionButton';
+import BatchBuyButton from '@/components/BatchBuyButton';
 import { getShippingQueue } from '@/lib/queries';
 import { getTierDisplayName, getTierBookCount } from '@/lib/types';
 
@@ -8,6 +9,22 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const SHIPPING_DAYS = [2, 5]; // Tuesday (2) and Friday (5)
+
+const KNOWN_TIERS = [
+  'little-nest', 'cozy-nest', 'story-nest',
+  'growing-nest', 'family-nest',
+  'little_nest', 'cozy_nest', 'story_nest',
+  'growing_nest', 'family_nest',
+];
+
+function normalizeTierKey(tier: string): string {
+  return tier.toLowerCase().replace(/\s+/g, '-');
+}
+
+function isKnownTier(tier: string | null | undefined): boolean {
+  if (!tier || !tier.trim()) return false;
+  return KNOWN_TIERS.includes(normalizeTierKey(tier));
+}
 
 function getNextShipDate(orderDate: Date): Date {
   const shipDate = new Date(orderDate);
@@ -57,15 +74,11 @@ export default async function ShippingQueue() {
     const aToday = isToday(a.created_at);
     const bToday = isToday(b.created_at);
 
-    // Overdue items first
     if (aOverdue && !bOverdue) return -1;
     if (!aOverdue && bOverdue) return 1;
-
-    // Then today's items
     if (aToday && !bToday) return -1;
     if (!aToday && bToday) return 1;
 
-    // Then by created_at (earliest first)
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
 
@@ -78,6 +91,21 @@ export default async function ShippingQueue() {
   const todayCount = sortedBundles.filter((b) => isToday(b.created_at)).length;
 
   const isEmpty = totalOrders === 0;
+
+  // Build pre-flight data for BatchBuyButton
+  const batchItems = sortedBundles.map((bundle) => {
+    const pickedBooks = bundle.item_count ?? 0;
+    const expectedBooks = getTierBookCount(bundle.tier);
+    const fullName = `${bundle.first_name || ''} ${bundle.last_name || ''}`.trim();
+
+    return {
+      bundleId: bundle.bundle_id,
+      memberName: fullName || 'Unknown',
+      hasAddress: bundle.hasAddress ?? false,
+      booksFull: pickedBooks >= expectedBooks,
+      hasTier: isKnownTier(bundle.tier),
+    };
+  });
 
   return (
     <div
@@ -158,6 +186,9 @@ export default async function ShippingQueue() {
         </div>
       )}
 
+      {/* ── Batch Buy Section ─────────────────────────────────── */}
+      {!isEmpty && <BatchBuyButton items={batchItems} />}
+
       {/* Empty State */}
       {isEmpty && (
         <div
@@ -217,17 +248,18 @@ export default async function ShippingQueue() {
                   color: colors.cream,
                 }}
               >
-                {['Member', 'Email', 'Tier', 'Books', 'Ship by', 'Action'].map(
+                {['Ready', 'Member', 'Tier', 'Books', 'Ship by', 'Action'].map(
                   (header, i) => (
                     <th
                       key={header}
                       style={{
                         padding: `${spacing.sm} ${spacing.md}`,
-                        textAlign: i === 5 ? 'right' : 'left',
+                        textAlign: i === 0 ? 'center' : i === 5 ? 'right' : 'left',
                         fontSize: typography.fontSize.xs,
                         fontWeight: typography.fontWeight.bold,
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
+                        width: i === 0 ? '60px' : undefined,
                       }}
                     >
                       {header}
@@ -247,18 +279,15 @@ export default async function ShippingQueue() {
                 const overdue = isOverdue(bundle.created_at);
                 const shipsToday = isToday(bundle.created_at);
                 const tierName = getTierDisplayName(bundle.tier);
-                const KNOWN_TIERS = [
-                  'little-nest', 'cozy-nest', 'story-nest',
-                  'growing-nest', 'family-nest',
-                  'little_nest', 'cozy_nest', 'story_nest',
-                  'growing_nest', 'family_nest',
-                ];
-                const hasTier =
-                  bundle.tier != null &&
-                  bundle.tier.trim() !== '' &&
-                  KNOWN_TIERS.includes(
-                    bundle.tier.toLowerCase().replace(/\s+/g, '-')
-                  );
+                const hasTier = isKnownTier(bundle.tier);
+                const hasAddress = bundle.hasAddress ?? false;
+
+                // Pre-flight readiness
+                const isReady = hasAddress && isFull && hasTier;
+                const issues: string[] = [];
+                if (!hasAddress) issues.push('No address');
+                if (!hasTier) issues.push('No tier');
+                if (isUnderfilled) issues.push('Books incomplete');
 
                 const rowBg = overdue
                   ? '#FEF2F2'
@@ -279,28 +308,79 @@ export default async function ShippingQueue() {
                           : '4px solid transparent',
                     }}
                   >
-                    {/* Member */}
+                    {/* Ready check */}
                     <td
                       style={{
-                        padding: spacing.md,
+                        padding: spacing.sm,
+                        textAlign: 'center',
                         fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.semibold,
-                        color: colors.text,
                       }}
                     >
-                      {fullName || '—'}
+                      {isReady ? (
+                        <span
+                          title="Ready to ship"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            backgroundColor: '#ECFDF5',
+                            color: '#065F46',
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.bold,
+                          }}
+                        >
+                          ✓
+                        </span>
+                      ) : (
+                        <span
+                          title={issues.join(', ')}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            backgroundColor: '#FEF2F2',
+                            color: '#DC2626',
+                            fontSize: typography.fontSize.xs,
+                            fontWeight: typography.fontWeight.bold,
+                            cursor: 'help',
+                          }}
+                        >
+                          !
+                        </span>
+                      )}
                     </td>
 
-                    {/* Email */}
+                    {/* Member + email */}
                     <td
                       style={{
                         padding: spacing.md,
-                        fontSize: typography.fontSize.xs,
-                        color: colors.textLight,
-                        fontFamily: 'monospace',
                       }}
                     >
-                      {bundle.email || '—'}
+                      <div
+                        style={{
+                          fontSize: typography.fontSize.sm,
+                          fontWeight: typography.fontWeight.semibold,
+                          color: colors.text,
+                        }}
+                      >
+                        {fullName || '—'}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: typography.fontSize.xs,
+                          color: colors.textLight,
+                          fontFamily: 'monospace',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {bundle.email || '—'}
+                      </div>
                     </td>
 
                     {/* Tier badge */}
@@ -373,10 +453,7 @@ export default async function ShippingQueue() {
                         )}
                         {isFull && (
                           <span
-                            style={{
-                              fontSize: typography.fontSize.xs,
-                              color: '#065F46',
-                            }}
+                            style={{ fontSize: typography.fontSize.xs, color: '#065F46' }}
                             title="Bundle is complete"
                           >
                             ✓
@@ -453,10 +530,10 @@ export default async function ShippingQueue() {
                     >
                       <ActionButton
                         href={`/ship/${bundle.bundle_id}`}
-                        backgroundColor={colors.secondary}
-                        hoverColor="#B87D1C"
+                        backgroundColor={colors.primary}
+                        hoverColor={colors.primaryHover}
                       >
-                        Ship →
+                        View →
                       </ActionButton>
                     </td>
                   </tr>

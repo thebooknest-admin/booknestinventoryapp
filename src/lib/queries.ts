@@ -19,6 +19,7 @@ type ShippingQueueRow = {
   id: string;
   order_number?: string | null;
   member_id?: string | null;
+  address_id?: string | null;
   created_at: string;
   members?: ShippingQueueMember | ShippingQueueMember[] | null;
   shipment_books?: Array<{ id: string }> | null;
@@ -110,6 +111,7 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
       id,
       order_number,
       member_id,
+      address_id,
       created_at,
       shipment_date,
       status,
@@ -132,13 +134,46 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
     throw error;
   }
 
-  return ((data || []) as ShippingQueueRow[]).map((item) => {
+  const rows = (data || []) as ShippingQueueRow[];
+
+  // Check which shipments have addresses via address_id
+  const addressIds = rows.map((r) => r.address_id).filter(Boolean) as string[];
+  let validAddressIds = new Set<string>();
+  if (addressIds.length) {
+    const { data: addrCheck } = await supabase
+      .from('member_addresses')
+      .select('id')
+      .in('id', addressIds);
+    validAddressIds = new Set(addrCheck?.map((a) => a.id) || []);
+  }
+
+  // Check for default addresses for shipments without address_id
+  const membersNeedingDefault = rows
+    .filter((r) => !r.address_id && r.member_id)
+    .map((r) => r.member_id as string);
+
+  let defaultAddressMembers = new Set<string>();
+  if (membersNeedingDefault.length) {
+    const { data: defaultAddrs } = await supabase
+      .from('member_addresses')
+      .select('member_id')
+      .in('member_id', membersNeedingDefault)
+      .eq('is_default', true);
+    defaultAddressMembers = new Set(defaultAddrs?.map((a) => a.member_id) || []);
+  }
+
+  return rows.map((item) => {
     const member = Array.isArray(item.members) ? item.members[0] : item.members;
     const memberName = (member?.name || '').trim();
+    const hasAddress = item.address_id
+      ? validAddressIds.has(item.address_id)
+      : item.member_id
+        ? defaultAddressMembers.has(item.member_id)
+        : false;
 
     return {
       bundle_id: item.id,
-      order_number: item.order_number ?? undefined, // Add order number
+      order_number: item.order_number ?? undefined,
       member_id: item.member_id ?? undefined,
       status: 'shipping' as BundleStatus,
       first_name: memberName.split(' ')[0] || '',
@@ -149,6 +184,7 @@ export async function getShippingQueue(): Promise<OpsShippingQueueItem[]> {
       created_at: item.created_at,
       tracking_number: null,
       item_count: item.shipment_books?.length || 0,
+      hasAddress,
     };
   });
 }

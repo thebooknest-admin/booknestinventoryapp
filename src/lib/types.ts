@@ -73,6 +73,7 @@ export interface OpsPickingQueueItem {
 
 export interface OpsShippingQueueItem extends OpsPickingQueueItem {
   tracking_number: string | null;
+  hasAddress?: boolean;
 }
 
 // Helper function to normalize tier names
