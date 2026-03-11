@@ -164,6 +164,9 @@ export async function POST(req: NextRequest) {
           from_address: RETURN_ADDRESS,
           to_address: item.address,
           parcel: {
+            length: 12,
+            width: 9,
+            height: Math.max(1, Math.ceil(item.bookCount * 0.5)),
             weight: item.weight * 16, // lbs to oz
           },
         });
@@ -176,7 +179,7 @@ export async function POST(req: NextRequest) {
           tier: item.tier,
           bookCount: item.bookCount,
           weight: item.weight,
-          rates: (epShipment.rates || []).map((r: any) => ({
+          rates: (epShipment.rates || []).map((r: { id: string; service: string; carrier: string; rate: string; delivery_days: number | null }) => ({
             id: r.id,
             service: r.service,
             carrier: r.carrier,
@@ -187,6 +190,7 @@ export async function POST(req: NextRequest) {
       }),
     );
 
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     const successful = results
       .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
       .map((r) => r.value);
@@ -197,6 +201,7 @@ export async function POST(req: NextRequest) {
         shipmentId: enriched[i]?.id,
         reason: r.reason?.message || 'Failed to create EasyPost shipment',
       }));
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     return NextResponse.json({
       shipments: successful,
