@@ -171,6 +171,8 @@ export async function POST(req: NextRequest) {
           },
           options: {
             special_rates_eligibility: 'USPS.MEDIAMAIL',
+            label_format: 'PDF',
+            label_size: '4x6',
           },
         });
 

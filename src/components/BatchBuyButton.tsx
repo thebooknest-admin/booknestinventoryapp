@@ -510,6 +510,38 @@ export default function BatchBuyButton({ items }: { items: QueueItem[] }) {
   if (step === 'done') {
     const allLabelUrls = results.map((r) => r.labelUrl).filter(Boolean) as string[];
 
+    async function handlePrintAll() {
+      if (!allLabelUrls.length) return;
+
+      try {
+        const res = await fetch('/api/labels/merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ labelUrls: allLabelUrls }),
+        });
+
+        if (!res.ok) {
+          // Fallback: open individually
+          allLabelUrls.forEach((url) => window.open(url, '_blank'));
+          return;
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const printWindow = window.open(url, '_blank');
+        if (!printWindow) {
+          // If popup blocked, download instead
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `labels-${Date.now()}.pdf`;
+          a.click();
+        }
+      } catch {
+        // Fallback: open individually
+        allLabelUrls.forEach((url) => window.open(url, '_blank'));
+      }
+    }
+
     return (
       <div
         style={{
@@ -586,31 +618,15 @@ export default function BatchBuyButton({ items }: { items: QueueItem[] }) {
                     {r.trackingNumber || 'No tracking'}
                   </div>
                 </div>
-                {r.labelUrl && (
-                  <a
-                    href={r.labelUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      fontSize: typography.fontSize.xs,
-                      fontWeight: typography.fontWeight.bold,
-                      color: colors.primary,
-                      textDecoration: 'none',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Print ↗
-                  </a>
-                )}
               </div>
             ))}
           </div>
         )}
 
         <div style={{ display: 'flex', gap: spacing.sm }}>
-          {allLabelUrls.length > 1 && (
+          {allLabelUrls.length > 0 && (
             <button
-              onClick={() => allLabelUrls.forEach((url) => window.open(url, '_blank'))}
+              onClick={handlePrintAll}
               style={{
                 padding: `${spacing.sm} ${spacing.lg}`,
                 backgroundColor: colors.primary,
@@ -623,31 +639,8 @@ export default function BatchBuyButton({ items }: { items: QueueItem[] }) {
                 cursor: 'pointer',
               }}
             >
-              Open all {allLabelUrls.length} labels
+              🖨 Print all {allLabelUrls.length} labels
             </button>
-          )}
-          {allLabelUrls.length === 1 && (
-            <a
-              href={allLabelUrls[0]}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: `${spacing.sm} ${spacing.lg}`,
-                backgroundColor: colors.primary,
-                color: colors.cream,
-                border: 'none',
-                borderRadius: radii.sm,
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.bold,
-                textTransform: 'uppercase',
-                textDecoration: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              Print label
-            </a>
           )}
           <button
             onClick={() => window.location.reload()}
