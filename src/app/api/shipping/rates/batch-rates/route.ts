@@ -169,6 +169,9 @@ export async function POST(req: NextRequest) {
             height: Math.max(1, Math.ceil(item.bookCount * 0.5)),
             weight: item.weight * 16, // lbs to oz
           },
+          options: {
+            special_rates_eligibility: 'USPS.MEDIAMAIL',
+          },
         });
 
         return {
