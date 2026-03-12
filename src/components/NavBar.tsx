@@ -25,7 +25,8 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Warehouse',
     children: [
       { label: 'Receive', href: '/receive', description: 'Scan & shelve new books' },
-      { label: 'Returns', href: '/returns', description: 'Process returned books' },
+      { label: 'Process Returns', href: '/returns', description: 'Scan returned books back in' },
+      { label: 'Incoming Returns', href: '/work/returns', description: 'Track return labels & packages' },
       { label: 'Inventory', href: '/inventory', description: 'Browse bins & stock' },
     ],
   },

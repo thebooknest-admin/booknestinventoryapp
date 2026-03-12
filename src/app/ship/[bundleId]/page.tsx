@@ -6,6 +6,7 @@ import BuyLabelButton from '@/components/BuyLabelButton';
 import PrintLabelButton from '@/components/PrintLabelButton';
 import HomeButton from '@/components/HomeButton';
 import ShippingChecklist from '@/components/ShippingChecklist';
+import GenerateReturnLabel from '@/components/GenerateReturnLabel';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -664,6 +665,49 @@ export default async function ShipBundle({ params }: ShipPageProps) {
 
       {/* ── Interactive Shipping Checklist ─────────────────────── */}
       <ShippingChecklist isAlreadyShipped={isAlreadyShipped} />
+
+      {/* ── Generate Return Label ─────────────────────────────── */}
+      {isAlreadyShipped && shipment.member_id && (
+        <section
+          style={{
+            backgroundColor: colors.surface,
+            border: `2px solid ${colors.border}`,
+            borderRadius: radii.md,
+            padding: spacing.lg,
+            marginTop: spacing.lg,
+            boxShadow: shadows.sm,
+          }}
+        >
+          <h2
+            style={{
+              fontSize: typography.fontSize.lg,
+              fontWeight: typography.fontWeight.bold,
+              color: colors.text,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              marginTop: 0,
+              marginBottom: spacing.sm,
+            }}
+          >
+            Return label
+          </h2>
+          <p
+            style={{
+              fontSize: typography.fontSize.sm,
+              color: colors.textLight,
+              margin: 0,
+              marginBottom: spacing.md,
+            }}
+          >
+            Generate a prepaid Media Mail return label for this member to send their books back.
+          </p>
+          <GenerateReturnLabel
+            memberId={shipment.member_id}
+            shipmentId={bundleId}
+            memberName={memberName}
+          />
+        </section>
+      )}
     </div>
   );
 }

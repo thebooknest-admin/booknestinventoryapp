@@ -58,6 +58,13 @@ export type MembersListRow = {
   is_founding_flock: boolean | null;
   is_vip: boolean | null;
   created_at: string;
+  address: {
+    street: string;
+    street2: string | null;
+    city: string;
+    state: string;
+    zip: string;
+  } | null;
 };
 
 // =====================================================
@@ -361,7 +368,8 @@ export async function getMembersList(): Promise<MembersListRow[]> {
   const { data, error } = await supabase
     .from('members')
     .select(
-      `id, name, email, tier, age_group, subscription_status, next_ship_date, is_founding_flock, is_vip, created_at`
+      `id, name, email, tier, age_group, subscription_status, next_ship_date, is_founding_flock, is_vip, created_at,
+       member_addresses (street, street2, city, state, zip, is_default)`
     )
     .order('created_at', { ascending: false });
 
@@ -370,5 +378,34 @@ export async function getMembersList(): Promise<MembersListRow[]> {
     throw error;
   }
 
-  return (data || []) as MembersListRow[];
+  return (data || []).map((m: Record<string, unknown>) => {
+    const addresses = m.member_addresses as Array<{
+      street: string; street2: string | null; city: string; state: string; zip: string; is_default: boolean;
+    }> | null;
+
+    // Pick the default address, or first available
+    const defaultAddr = addresses?.find((a) => a.is_default) || addresses?.[0] || null;
+
+    return {
+      id: m.id as string,
+      name: m.name as string | null,
+      email: m.email as string | null,
+      tier: m.tier as string | null,
+      age_group: m.age_group as string | null,
+      subscription_status: m.subscription_status as string | null,
+      next_ship_date: m.next_ship_date as string | null,
+      is_founding_flock: m.is_founding_flock as boolean | null,
+      is_vip: m.is_vip as boolean | null,
+      created_at: m.created_at as string,
+      address: defaultAddr
+        ? {
+            street: defaultAddr.street,
+            street2: defaultAddr.street2,
+            city: defaultAddr.city,
+            state: defaultAddr.state,
+            zip: defaultAddr.zip,
+          }
+        : null,
+    };
+  });
 }

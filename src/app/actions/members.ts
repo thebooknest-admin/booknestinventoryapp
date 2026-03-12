@@ -70,3 +70,29 @@ export async function createMember(payload: CreateMemberPayload) {
 
   return { success: true as const, member: data };
 }
+
+export async function deleteMember(memberId: string) {
+  const supabase = supabaseServer();
+
+  // Delete member addresses first (foreign key)
+  await supabase
+    .from('member_addresses')
+    .delete()
+    .eq('member_id', memberId);
+
+  // Delete the member
+  const { error } = await supabase
+    .from('members')
+    .delete()
+    .eq('id', memberId);
+
+  if (error) {
+    console.error('Error deleting member', error);
+    return { success: false as const, error: error.message };
+  }
+
+  revalidatePath('/members');
+  revalidatePath('/dashboard');
+
+  return { success: true as const };
+}

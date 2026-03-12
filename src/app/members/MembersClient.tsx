@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { colors, typography, spacing, radii } from '@/styles/tokens';
 import { getTierDisplayName } from '@/lib/types';
 import type { MembersListRow } from '@/lib/queries';
-import { updateMember, createMember } from '@/app/actions/members';
+import { updateMember, createMember, deleteMember } from '@/app/actions/members';
 
 function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] }) {
   const [members, setMembers] = useState<MembersListRow[]>(initialMembers);
@@ -124,6 +124,22 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
     } catch (e) {
       setAddError('Unexpected error while creating member');
       setIsCreating(false);
+    }
+  };
+
+  const handleDelete = async (member: MembersListRow) => {
+    if (!confirm(`Delete ${member.name || member.email}? This cannot be undone.`)) return;
+
+    try {
+      const result = await deleteMember(member.id);
+      if (result.success) {
+        setMembers((prev) => prev.filter((m) => m.id !== member.id));
+        setEditing(null);
+      } else {
+        alert(result.error || 'Failed to delete member');
+      }
+    } catch {
+      alert('Unexpected error while deleting member');
     }
   };
 
@@ -250,8 +266,8 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
                 <th style={thStyle}>Email</th>
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Tier</th>
+                <th style={thStyle}>Address</th>
                 <th style={thStyle}>Age Group</th>
-                <th style={thStyle}>Next Ship</th>
                 <th style={thStyle}>Flags</th>
                 <th style={thStyle}>Actions</th>
               </tr>
@@ -293,12 +309,26 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
                       )}
                     </td>
                     <td style={tdStyle}>{tierDisplay}</td>
-                    <td style={tdStyle}>{m.age_group || '—'}</td>
-                    <td style={tdMonoStyle}>
-                      {m.next_ship_date
-                        ? new Date(m.next_ship_date).toLocaleDateString()
-                        : '—'}
+                    <td style={tdStyle}>
+                      {m.address ? (
+                        <div style={{ fontSize: typography.fontSize.xs, color: colors.textLight, lineHeight: '1.4' }}>
+                          <div>{m.address.street}</div>
+                          {m.address.street2 && <div>{m.address.street2}</div>}
+                          <div>{m.address.city}, {m.address.state} {m.address.zip}</div>
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: typography.fontSize.xs,
+                            color: '#DC2626',
+                            fontWeight: typography.fontWeight.semibold,
+                          }}
+                        >
+                          No address
+                        </span>
+                      )}
                     </td>
+                    <td style={tdStyle}>{m.age_group || '—'}</td>
                     <td style={tdStyle}>
                       <div
                         style={{
@@ -315,22 +345,40 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
                       </div>
                     </td>
                     <td style={tdStyle}>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(m)}
-                        style={{
-                          padding: `${spacing.xs} ${spacing.md}`,
-                          fontSize: typography.fontSize.xs,
-                          borderRadius: radii.sm,
-                          border: `1px solid ${colors.border}`,
-                          backgroundColor: colors.surface,
-                          cursor: 'pointer',
-                          textTransform: 'uppercase',
-                          fontWeight: typography.fontWeight.semibold,
-                        }}
-                      >
-                        Edit
-                      </button>
+                      <div style={{ display: 'flex', gap: spacing.xs }}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(m)}
+                          style={{
+                            padding: `${spacing.xs} ${spacing.md}`,
+                            fontSize: typography.fontSize.xs,
+                            borderRadius: radii.sm,
+                            border: `1px solid ${colors.border}`,
+                            backgroundColor: colors.surface,
+                            cursor: 'pointer',
+                            textTransform: 'uppercase',
+                            fontWeight: typography.fontWeight.semibold,
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(m)}
+                          style={{
+                            padding: `${spacing.xs} ${spacing.sm}`,
+                            fontSize: typography.fontSize.xs,
+                            borderRadius: radii.sm,
+                            border: '1px solid #FECACA',
+                            backgroundColor: '#FEF2F2',
+                            color: '#DC2626',
+                            cursor: 'pointer',
+                            fontWeight: typography.fontWeight.semibold,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -339,7 +387,7 @@ function MembersClient({ initialMembers }: { initialMembers: MembersListRow[] })
               {members.length === 0 && (
                 <tr>
                   <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', padding: spacing.xl }}>
-                    No members yet. You can add waitlist members manually in Supabase for now.
+                    No members yet. Click &quot;Add member&quot; to get started.
                   </td>
                 </tr>
               )}
